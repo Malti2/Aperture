@@ -5,7 +5,7 @@ on:
     branches: [main]
 jobs:
   ipa:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - name: Generate project
@@ -26,7 +26,7 @@ jobs:
           path: CameraControlTest.ipa
           retention-days: 1
   screenshot:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - name: Generate project
@@ -36,19 +36,24 @@ jobs:
           xcodebuild -project CameraControlTest.xcodeproj -scheme CameraControlTest \
             -configuration Debug -sdk iphonesimulator -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO build
-      - name: Screenshot
+      - name: Screenshots
         run: |
-          DEV=$(xcrun simctl list devices available | grep -m1 "iPhone" | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
+          DEV=$(xcrun simctl list devices available | grep -m1 "iPhone 17 (" | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
+          [ -n "$DEV" ] || DEV=$(xcrun simctl list devices available | grep -m1 "iPhone" | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
           xcrun simctl boot "$DEV"
-          xcrun simctl ui "$DEV" appearance dark
+          xcrun simctl bootstatus "$DEV" -b
           xcrun simctl install "$DEV" build/Build/Products/Debug-iphonesimulator/CameraControlTest.app
-          xcrun simctl launch "$DEV" de.malte.cameracontroltest
+          xcrun simctl launch "$DEV" de.malte.cameracontroltest -demo
           sleep 6
-          xcrun simctl io "$DEV" screenshot screenshot.png
+          xcrun simctl io "$DEV" screenshot screenshot-menu.png
+          xcrun simctl terminate "$DEV" de.malte.cameracontroltest
+          xcrun simctl launch "$DEV" de.malte.cameracontroltest -demo -autoplay
+          sleep 9
+          xcrun simctl io "$DEV" screenshot screenshot-game.png
       - uses: actions/upload-artifact@v4
         with:
-          name: simulator-screenshot
-          path: screenshot.png
+          name: simulator-screenshots
+          path: screenshot-*.png
           retention-days: 1
   release:
     needs: [ipa, screenshot]
@@ -63,8 +68,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete v1.0.0 --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
-          gh release create v1.0.0 --repo "$GITHUB_REPOSITORY" --draft --target main \
-            --title "Camera Control Test 1.0.0 (unsigned)" \
+          gh release delete v1.1.0 --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create v1.1.0 --repo "$GITHUB_REPOSITORY" --draft --target main \
+            --title "Aperture 1.1.0 (unsigned)" \
             --notes "Unsigned IPA. Sign and install it yourself." \
-            out/CameraControlTest-ipa/CameraControlTest.ipa out/simulator-screenshot/screenshot.png
+            out/CameraControlTest-ipa/CameraControlTest.ipa out/simulator-screenshots/screenshot-menu.png out/simulator-screenshots/screenshot-game.png
