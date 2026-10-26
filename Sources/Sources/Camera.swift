@@ -13,6 +13,7 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
     private let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "aperture.camera")
     private var configured = false
+    private var steerSlider: AVCaptureSlider?
 
     override init() {
         super.init()
@@ -43,7 +44,11 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
                 self.configure(engine: engine)
                 self.configured = true
             }
-            if !self.session.isRunning { self.session.startRunning() }
+            // Keep the control value in line with the game after a restart.
+            if !self.session.isRunning {
+                if let s = self.steerSlider { s.value = Float(engine.rawSteer) }
+                self.session.startRunning()
+            }
         }
     }
 
@@ -67,12 +72,18 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
         if session.supportsControls {
             let slider = AVCaptureSlider("Steer", symbolName: "arrow.left.and.right", in: 0...1, step: 0.005)
             slider.value = 0.5
+            steerSlider = slider
             slider.setActionQueue(queue) { value in
                 // Relative mapping: the ball moves by the slider delta times the gain,
                 // so reversing at an edge responds at once (no hidden dead zone).
                 let delta = CGFloat(value) - engine.rawSteer
                 engine.rawSteer = CGFloat(value)
-                if !engine.paused { engine.target = min(max(engine.target + delta * Engine.steerGain, 0), 1) }
+                if !engine.paused {
+                    engine.target = min(max(engine.target + delta * Engine.steerGain, 0), 1)
+                    // Anchor the ends: the ball always reaches the wall when the control is at its end.
+                    if value <= 0.01 { engine.target = 0 }
+                    if value >= 0.99 { engine.target = 1 }
+                }
                 DispatchQueue.main.async { engine.onSteer?(CGFloat(value)) }
             }
             if session.canAddControl(slider) { session.addControl(slider) }
