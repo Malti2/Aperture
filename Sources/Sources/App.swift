@@ -230,7 +230,7 @@ struct ContentView: View {
                 Section {
                     VStack(alignment: .leading) {
                         Text("Steering speed")
-                        Slider(value: $steerGain, in: 1.0...2.6, step: 0.1)
+                        Slider(value: $steerGain, in: 1.0...4.0, step: 0.1)
                     }
                     Toggle("Haptics", isOn: $haptics)
                 }
