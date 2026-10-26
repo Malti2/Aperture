@@ -1,11 +1,7 @@
-# Camera Control Test
+# Aperture
 
-A tiny diagnostic app for iPhone models with Camera Control. It answers one question: does an app that is not a camera app receive Camera Control button events while a camera session runs without a preview?
+A small arcade game for iPhone models with Camera Control. Swipe Camera Control to steer through the gaps in the walls, and press it fully to dash through one. Touch works too: drag to steer, tap the bolt to dash.
 
-It uses `AVCaptureEventInteraction` and `AVCaptureSession` controls. Nothing is recorded, saved or sent. The camera permission is requested only when you pick a camera mode.
+The game keeps the camera session running without a preview so that the system delivers Camera Control events to the app. Nothing is recorded, saved or sent. The app shows a camera status badge while it runs.
 
-The app shows camera permission, session state, a counter and a timestamped log of every received event, so the result is visible on screen.
-
-Note: events from Camera Control, the volume-down button and the Action button all arrive in the same handler and cannot be told apart by the event itself. The app also logs light presses and swipes through the session controls, which only Camera Control produces.
-
-Builds are unsigned. Sign and install with your own tool.
+Built with SwiftUI and Liquid Glass (iOS 26). Builds are unsigned. Sign and install with your own tool.
