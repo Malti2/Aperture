@@ -206,7 +206,7 @@ struct ContentView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if !demo {
-                Text("\(cam.controlsInfo). Light presses seen: \(cam.overlayCount)")
+                Text("\(cam.controlsInfo). Overlay activations: \(cam.overlayCount)")
                     .font(.caption2)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.tertiary)
