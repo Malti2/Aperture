@@ -17,7 +17,8 @@ final class Engine {
     private(set) var trail: [CGFloat] = []
     var running = false
     var holding = false
-    var onSteer: (() -> Void)?
+    var onSteer: ((CGFloat) -> Void)?
+    var steerBaseline: CGFloat = 0.5
     var bot = false
     var level = 1
     static let levelNames = ["Calm", "Normal", "Fast"]
