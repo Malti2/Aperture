@@ -68,8 +68,11 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
             let slider = AVCaptureSlider("Steer", symbolName: "arrow.left.and.right", in: 0...1)
             slider.value = 0.5
             slider.setActionQueue(queue) { value in
+                // Relative mapping: the ball moves by the slider delta times the gain,
+                // so reversing at an edge responds at once (no hidden dead zone).
+                let delta = CGFloat(value) - engine.rawSteer
                 engine.rawSteer = CGFloat(value)
-                engine.target = min(max(0.5 + (CGFloat(value) - 0.5) * Engine.steerGain, 0), 1)
+                engine.target = min(max(engine.target + delta * Engine.steerGain, 0), 1)
                 DispatchQueue.main.async { engine.onSteer?(CGFloat(value)) }
             }
             if session.canAddControl(slider) { session.addControl(slider) }
