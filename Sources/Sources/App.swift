@@ -66,6 +66,12 @@ struct ContentView: View {
         .onAppear(perform: setup)
         .sheet(isPresented: $showSettings) { settingsSheet }
         .onChange(of: steerGain) { _, v in Engine.steerGain = CGFloat(v) }
+        .onChange(of: phase) { _, _ in updateIdleTimer() }
+        .onChange(of: scenePhase) { _, new in
+            updateIdleTimer()
+            if new != .active { cancelHold() }
+        }
+        .onChange(of: showSettings) { _, _ in updateIdleTimer() }
         .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
             if phase == .playing && !engine.paused { bankSync() }
         }
@@ -310,6 +316,12 @@ struct ContentView: View {
 
     // MARK: Bank and shop
 
+    /// Keeps the screen on only while a round is running in the foreground.
+    /// Camera Control presses and swipes do not count as touch activity for auto-lock.
+    private func updateIdleTimer() {
+        UIApplication.shared.isIdleTimerDisabled = phase == .playing && scenePhase == .active && !showSettings
+    }
+
     /// Adds the lightning earned this round to the saved balance. Only the part not yet credited is added.
     /// The round score (and the high score) is separate and unchanged.
     private func bankSync() {
@@ -383,7 +395,7 @@ struct ContentView: View {
         let item = selected
         if haptics { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
         DispatchQueue.main.asyncAfter(deadline: .now() + holdTime) {
-            guard holdToken == token, holdStart != nil, phase == .shop, selected == item else { return }
+            guard holdToken == token, holdStart != nil, phase == .shop, selected == item, scenePhase == .active else { return }
             purchase(item)
         }
     }
