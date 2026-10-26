@@ -37,12 +37,20 @@ struct ContentView: View {
         .onAppear(perform: setup)
         .sheet(isPresented: $showSettings) { settingsSheet }
         .onChange(of: steerGain) { _, v in Engine.steerGain = CGFloat(v) }
+        .onChange(of: showSettings) { _, open in
+            if open {
+                cam.stop()
+            } else if phase == .menu {
+                engine.steerBaseline = engine.rawSteer
+                startCamera()
+            }
+        }
         .onChange(of: scenePhase) { _, new in
             // The Camera Control overlay can make the scene inactive.
             // Keep the session running then, otherwise the overlay closes at once.
             switch new {
             case .active:
-                if !demo { cam.start(engine: engine) }
+                if !demo && !showSettings && phase != .over { cam.start(engine: engine) }
             case .background:
                 cam.stop()
                 if phase == .playing { pauseGame() }
@@ -360,6 +368,7 @@ struct ContentView: View {
         }
         endedAt = Date()
         if haptics { UINotificationFeedbackGenerator().notificationOccurred(.error) }
+        if !demo { cam.stop() }
         withAnimation(.smooth) { phase = .over }
     }
 }
