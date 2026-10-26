@@ -129,8 +129,13 @@ struct CaptureEventView: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
         let view = UIView()
         let interaction = AVCaptureEventInteraction { event in
-            if event.phase == .ended {
+            switch event.phase {
+            case .began:
+                DispatchQueue.main.async { engine.pressBegan?() }
+            case .ended:
                 DispatchQueue.main.async { engine.pressHandler?() }
+            default:
+                DispatchQueue.main.async { engine.pressCancel?() }
             }
         }
         view.addInteraction(interaction)
