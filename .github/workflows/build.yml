@@ -47,9 +47,9 @@ jobs:
           sleep 6
           xcrun simctl io "$DEV" screenshot screenshot-menu.png
           xcrun simctl terminate "$DEV" de.malte.cameracontroltest
-          xcrun simctl launch "$DEV" de.malte.cameracontroltest -demo -ready
+          xcrun simctl launch "$DEV" de.malte.cameracontroltest -demo -settings
           sleep 6
-          xcrun simctl io "$DEV" screenshot screenshot-ready.png
+          xcrun simctl io "$DEV" screenshot screenshot-settings.png
           xcrun simctl terminate "$DEV" de.malte.cameracontroltest
           xcrun simctl launch "$DEV" de.malte.cameracontroltest -demo -autoplay
           sleep 9
@@ -76,4 +76,4 @@ jobs:
           gh release create v1.1.2 --repo "$GITHUB_REPOSITORY" --draft --target main \
             --title "Aperture 1.1.2 (unsigned)" \
             --notes "Unsigned IPA. Sign and install it yourself." \
-            out/CameraControlTest-ipa/CameraControlTest.ipa out/simulator-screenshots/screenshot-menu.png out/simulator-screenshots/screenshot-game.png out/simulator-screenshots/screenshot-ready.png
+            out/CameraControlTest-ipa/CameraControlTest.ipa out/simulator-screenshots/screenshot-menu.png out/simulator-screenshots/screenshot-game.png out/simulator-screenshots/screenshot-settings.png
