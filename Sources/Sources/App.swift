@@ -311,8 +311,9 @@ struct ContentView: View {
     // MARK: Bank and shop
 
     /// Adds the lightning earned this round to the saved balance. Only the part not yet credited is added.
+    /// The round score (and the high score) is separate and unchanged.
     private func bankSync() {
-        let s = Int(engine.score)
+        let s = engine.lightning
         if s > credited {
             bank += s - credited
             credited = s
@@ -490,6 +491,7 @@ struct ContentView: View {
         engine.onEnd = { DispatchQueue.main.async { finish() } }
         engine.onDash = { if haptics { UIImpactFeedbackGenerator(style: .rigid).impactOccurred() } }
         engine.pressHandler = { handlePress() }
+        engine.onFloor = { DispatchQueue.main.async { bankSync() } }
         engine.pressBegan = { beginHold() }
         engine.pressCancel = { cancelHold() }
         engine.onSteer = { value in
