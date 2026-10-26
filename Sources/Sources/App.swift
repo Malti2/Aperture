@@ -1,287 +1,267 @@
 import SwiftUI
-import AVFoundation
-import AVKit
 
-enum CameraMode: String, CaseIterable, Identifiable {
-    case off = "Off"
-    case hidden = "Hidden"
-    case preview = "Preview"
-    var id: String { rawValue }
-}
+enum Phase { case menu, playing, over }
 
-struct LogEntry: Identifiable {
-    let id = UUID()
-    let time: Date
-    let text: String
-}
+struct ContentView: View {
+    @StateObject private var cam = CameraService()
+    @State private var engine = Engine()
+    @State private var phase: Phase = .menu
+    @State private var best = UserDefaults.standard.integer(forKey: "best")
+    @State private var lastScore = 0
+    @State private var endedAt = Date.distantPast
+    @Environment(\.scenePhase) private var scenePhase
 
-final class CameraModel: NSObject, ObservableObject, AVCaptureSessionControlsDelegate {
-    @Published var mode: CameraMode = .off
-    @Published var useOutput = true
-    @Published var useZoomControl = true
-    @Published var interceptEnabled = true
-    @Published var authorization = AVCaptureDevice.authorizationStatus(for: .video)
-    @Published var isRunning = false
-    @Published var supportsControls = false
-    @Published var pressBegan = 0
-    @Published var pressEnded = 0
-    @Published var controlEvents = 0
-    @Published var log: [LogEntry] = []
+    private let demo = CommandLine.arguments.contains("-demo")
+    private let autoplay = CommandLine.arguments.contains("-autoplay")
 
-    let session = AVCaptureSession()
-    private let queue = DispatchQueue(label: "camera.session")
-
-    override init() {
-        super.init()
-        NotificationCenter.default.addObserver(forName: AVCaptureSession.didStartRunningNotification, object: session, queue: .main) { [weak self] _ in
-            self?.isRunning = true
-            self?.add("session started")
+    var body: some View {
+        ZStack {
+            playfield
+            hud
+            switch phase {
+            case .menu: menuCard
+            case .over: overCard
+            case .playing: EmptyView()
+            }
         }
-        NotificationCenter.default.addObserver(forName: AVCaptureSession.didStopRunningNotification, object: session, queue: .main) { [weak self] _ in
-            self?.isRunning = false
-            self?.add("session stopped")
-        }
-        NotificationCenter.default.addObserver(forName: AVCaptureSession.runtimeErrorNotification, object: session, queue: .main) { [weak self] note in
-            let err = note.userInfo?[AVCaptureSessionErrorKey] as? NSError
-            self?.add("session error: \(err?.localizedDescription ?? "unknown")")
-        }
-    }
-
-    func add(_ text: String) {
-        log.insert(LogEntry(time: Date(), text: text), at: 0)
-        if log.count > 60 { log.removeLast() }
-    }
-
-    func clear() {
-        log.removeAll()
-        pressBegan = 0
-        pressEnded = 0
-        controlEvents = 0
-    }
-
-    func record(phase: AVCaptureEventPhase) {
-        switch phase {
-        case .began:
-            pressBegan += 1
-            add("button event: began")
-        case .ended:
-            pressEnded += 1
-            add("button event: ended")
-        case .cancelled:
-            add("button event: cancelled")
-        @unknown default:
-            add("button event: unknown phase")
-        }
-    }
-
-    func apply() {
-        authorization = AVCaptureDevice.authorizationStatus(for: .video)
-        if mode == .off {
-            stop()
-            return
-        }
-        switch authorization {
-        case .authorized:
-            start()
-        case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
-                DispatchQueue.main.async {
-                    guard let self = self else { return }
-                    self.authorization = AVCaptureDevice.authorizationStatus(for: .video)
-                    self.add(granted ? "camera access granted" : "camera access denied")
-                    if granted && self.mode != .off { self.start() }
+        .ignoresSafeArea()
+        .background(Color.black)
+        .background(CaptureEventView(engine: engine).allowsHitTesting(false))
+        .preferredColorScheme(.dark)
+        .onAppear(perform: setup)
+        .onChange(of: scenePhase) { _, new in
+            if new == .active {
+                if !demo { cam.start(engine: engine) }
+            } else {
+                cam.stop()
+                if phase == .playing {
+                    engine.running = false
+                    phase = .menu
                 }
             }
-        default:
-            add("camera access is denied. Allow it in Settings.")
+        }
+    }
+
+    // MARK: Playfield
+
+    private var playfield: some View {
+        TimelineView(.animation) { timeline in
+            Canvas { context, size in
+                engine.step(timeline.date, size)
+                draw(context: &context, size: size)
+            }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    guard phase == .playing, engine.size.width > 0 else { return }
+                    engine.target = min(max(value.location.x / engine.size.width, 0), 1)
+                }
+        )
+    }
+
+    private func draw(context: inout GraphicsContext, size: CGSize) {
+        let full = CGRect(origin: .zero, size: size)
+        context.fill(
+            Path(full),
+            with: .linearGradient(
+                Gradient(colors: [Color(red: 0.03, green: 0.03, blue: 0.07), Color(red: 0.07, green: 0.08, blue: 0.16)]),
+                startPoint: CGPoint(x: size.width / 2, y: 0),
+                endPoint: CGPoint(x: size.width / 2, y: size.height)
+            )
+        )
+        let accent = Color(red: 0.42, green: 0.80, blue: 1.0)
+        let dimmed = phase != .playing
+
+        for bar in engine.bars {
+            let fade = bar.passed ? 0.55 : 1.0
+            let tint: Color = bar.dashed ? accent : .white
+            let leftW = max(0, bar.gapX - bar.gapW / 2)
+            let rightX = bar.gapX + bar.gapW / 2
+            let rects = [
+                CGRect(x: -20, y: bar.y, width: leftW + 20, height: engine.thick),
+                CGRect(x: rightX, y: bar.y, width: size.width - rightX + 20, height: engine.thick)
+            ]
+            for r in rects {
+                let p = Path(roundedRect: r, cornerRadius: 11)
+                context.fill(p, with: .color(tint.opacity((dimmed ? 0.10 : 0.16) * fade)))
+                context.stroke(p, with: .color(tint.opacity((dimmed ? 0.35 : 0.8) * fade)), lineWidth: 1.5)
+            }
+        }
+
+        let y = engine.playerY
+        let r = engine.radius
+        let step = max(6, engine.worldSpeed * 0.012)
+        for (i, x) in engine.trail.reversed().enumerated() {
+            let k = 1 - Double(i) / 18
+            let rr = r * CGFloat(0.35 + 0.6 * k)
+            let rect = CGRect(x: x - rr, y: y + CGFloat(i) * step - rr, width: rr * 2, height: rr * 2)
+            context.fill(Path(ellipseIn: rect), with: .color((engine.dashing ? accent : .white).opacity(0.16 * k)))
+        }
+        let x = engine.px * size.width
+        let glowR = r * (engine.dashing ? 4.2 : 2.6)
+        context.fill(
+            Path(ellipseIn: CGRect(x: x - glowR, y: y - glowR, width: glowR * 2, height: glowR * 2)),
+            with: .radialGradient(
+                Gradient(colors: [accent.opacity(engine.dashing ? 0.7 : 0.35), accent.opacity(0)]),
+                center: CGPoint(x: x, y: y), startRadius: 0, endRadius: glowR
+            )
+        )
+        context.fill(Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)), with: .color(.white))
+    }
+
+    // MARK: HUD
+
+    private var hud: some View {
+        VStack(spacing: 0) {
+            TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+                GlassEffectContainer(spacing: 12) {
+                    VStack(spacing: 10) {
+                        HStack(spacing: 12) {
+                            Label("\(Int(engine.score))", systemImage: "bolt.fill")
+                                .font(.title3.weight(.semibold).monospacedDigit())
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 10)
+                                .glassEffect(.regular, in: .capsule)
+                            Spacer()
+                            Label(Engine.levelNames[min(max(engine.level, 0), 2)], systemImage: "speedometer")
+                                .font(.footnote.weight(.medium))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 9)
+                                .glassEffect(.regular, in: .capsule)
+                        }
+                        Label(cameraText, systemImage: "camera.fill")
+                            .font(.footnote.weight(.medium))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .glassEffect(.regular, in: .capsule)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 62)
+            }
+            Spacer()
+            if phase == .playing {
+                TimelineView(.periodic(from: .now, by: 0.05)) { _ in
+                    Button {
+                        engine.dash()
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .trim(from: 0, to: engine.charge)
+                                .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                                .rotationEffect(.degrees(-90))
+                                .frame(width: 44, height: 44)
+                            Image(systemName: "bolt.fill").font(.title3)
+                        }
+                        .frame(width: 60, height: 60)
+                    }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
+                    .padding(.bottom, 40)
+                }
+            }
+        }
+    }
+
+    private var cameraText: String {
+        if demo { return "Demo mode" }
+        switch cam.authorization {
+        case .authorized: return cam.running ? "Camera on, not recorded" : "Camera starting"
+        case .notDetermined: return "Camera off"
+        default: return "Camera blocked"
+        }
+    }
+
+    // MARK: Cards
+
+    private var menuCard: some View {
+        VStack(spacing: 18) {
+            Text("Aperture")
+                .font(.system(size: 44, weight: .bold, design: .rounded))
+            Text("Swipe Camera Control to steer through the gaps. Press it fully to dash through a wall. Double light press to switch to the Speed control.")
+                .font(.callout)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+            if best > 0 {
+                Text("Best \(best)").font(.headline.monospacedDigit())
+            }
+            if cam.authorization != .authorized && !demo {
+                Button("Enable Camera Control") { cam.requestAccess(engine: engine) }
+                    .buttonStyle(.glass)
+                Text("The camera runs without recording so the button works. Nothing is saved or sent.")
+                    .font(.caption)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+            }
+            Button("Play") { start() }
+                .buttonStyle(.glassProminent)
+                .controlSize(.large)
+            Text("Touch also works: drag to steer, tap the bolt to dash.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(28)
+        .frame(maxWidth: 340)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 34, style: .continuous))
+    }
+
+    private var overCard: some View {
+        VStack(spacing: 14) {
+            Text("Crashed").font(.system(size: 34, weight: .bold, design: .rounded))
+            Text("\(lastScore)").font(.system(size: 56, weight: .bold, design: .rounded).monospacedDigit())
+            Text("Best \(best)").font(.headline.monospacedDigit()).foregroundStyle(.secondary)
+            Button("Play again") { start() }
+                .buttonStyle(.glassProminent)
+                .controlSize(.large)
+        }
+        .padding(28)
+        .frame(maxWidth: 320)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 34, style: .continuous))
+    }
+
+    // MARK: Flow
+
+    private func setup() {
+        engine.onEnd = { DispatchQueue.main.async { finish() } }
+        engine.onDash = { UIImpactFeedbackGenerator(style: .rigid).impactOccurred() }
+        engine.pressHandler = { handlePress() }
+        if !demo { cam.start(engine: engine) }
+        if autoplay {
+            engine.bot = true
+            start()
+        }
+    }
+
+    private func handlePress() {
+        switch phase {
+        case .playing: engine.dash()
+        case .menu: start()
+        case .over: if Date().timeIntervalSince(endedAt) > 0.8 { start() }
         }
     }
 
     private func start() {
-        let withOutput = useOutput
-        let withZoom = useZoomControl
-        queue.async { [weak self] in
-            guard let self = self else { return }
-            let session = self.session
-            if session.isRunning { session.stopRunning() }
-            session.beginConfiguration()
-            session.inputs.forEach { session.removeInput($0) }
-            session.outputs.forEach { session.removeOutput($0) }
-            session.controls.forEach { session.removeControl($0) }
-            session.sessionPreset = .low
-            var msg = "configured"
-            if let device = AVCaptureDevice.default(for: .video),
-               let input = try? AVCaptureDeviceInput(device: device),
-               session.canAddInput(input) {
-                session.addInput(input)
-                if withOutput {
-                    let output = AVCaptureVideoDataOutput()
-                    if session.canAddOutput(output) { session.addOutput(output) }
-                }
-                if withZoom && session.supportsControls {
-                    let slider = AVCaptureSystemZoomSlider(device: device) { [weak self] factor in
-                        DispatchQueue.main.async {
-                            self?.controlEvents += 1
-                            self?.add("zoom slider moved: \(String(format: "%.2f", Double(factor)))")
-                        }
-                    }
-                    if session.canAddControl(slider) { session.addControl(slider) }
-                    session.setControlsDelegate(self, queue: self.queue)
-                }
-                msg = "configured (output: \(withOutput), zoom control: \(withZoom && session.supportsControls))"
-            } else {
-                msg = "no camera input available"
-            }
-            session.commitConfiguration()
-            let supports = session.supportsControls
-            DispatchQueue.main.async {
-                self.supportsControls = supports
-                self.add(msg)
-            }
-            session.startRunning()
+        engine.reset()
+        engine.running = true
+        withAnimation(.smooth) { phase = .playing }
+    }
+
+    private func finish() {
+        guard phase == .playing else { return }
+        lastScore = Int(engine.score)
+        if lastScore > best {
+            best = lastScore
+            UserDefaults.standard.set(best, forKey: "best")
         }
-    }
-
-    private func stop() {
-        queue.async { [weak self] in
-            guard let self = self else { return }
-            if self.session.isRunning { self.session.stopRunning() }
-        }
-    }
-
-    // MARK: AVCaptureSessionControlsDelegate
-    func sessionControlsDidBecomeActive(_ session: AVCaptureSession) {
-        DispatchQueue.main.async { self.controlEvents += 1; self.add("controls: active (light press)") }
-    }
-    func sessionControlsWillEnterFullscreenAppearance(_ session: AVCaptureSession) {
-        DispatchQueue.main.async { self.add("controls: entering fullscreen") }
-    }
-    func sessionControlsWillExitFullscreenAppearance(_ session: AVCaptureSession) {
-        DispatchQueue.main.async { self.add("controls: leaving fullscreen") }
-    }
-    func sessionControlsDidBecomeInactive(_ session: AVCaptureSession) {
-        DispatchQueue.main.async { self.add("controls: inactive") }
-    }
-}
-
-struct CaptureEventView: UIViewRepresentable {
-    let model: CameraModel
-    let enabled: Bool
-
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        let interaction = AVCaptureEventInteraction { event in
-            let phase = event.phase
-            DispatchQueue.main.async { model.record(phase: phase) }
-        }
-        interaction.isEnabled = enabled
-        view.addInteraction(interaction)
-        context.coordinator.interaction = interaction
-        return view
-    }
-
-    func updateUIView(_ uiView: UIView, context: Context) {
-        context.coordinator.interaction?.isEnabled = enabled
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-    final class Coordinator { var interaction: AVCaptureEventInteraction? }
-}
-
-struct PreviewView: UIViewRepresentable {
-    let session: AVCaptureSession
-    func makeUIView(context: Context) -> PreviewUIView {
-        let v = PreviewUIView()
-        v.previewLayer.session = session
-        v.previewLayer.videoGravity = .resizeAspectFill
-        return v
-    }
-    func updateUIView(_ uiView: PreviewUIView, context: Context) {}
-}
-
-final class PreviewUIView: UIView {
-    override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
-    var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
-}
-
-struct ContentView: View {
-    @StateObject private var model = CameraModel()
-    @Environment(\.scenePhase) private var scenePhase
-
-    private var authText: String {
-        switch model.authorization {
-        case .authorized: return "Allowed"
-        case .denied: return "Denied"
-        case .restricted: return "Restricted"
-        case .notDetermined: return "Not asked yet"
-        @unknown default: return "Unknown"
-        }
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("Status") {
-                    LabeledContent("Camera permission", value: authText)
-                    LabeledContent("Camera session running", value: model.isRunning ? "Yes" : "No")
-                    LabeledContent("Session controls supported", value: model.supportsControls ? "Yes" : "No / not checked")
-                    LabeledContent("Button interception", value: model.interceptEnabled ? "On" : "Off")
-                }
-                Section("Setup") {
-                    Picker("Camera", selection: $model.mode) {
-                        ForEach(CameraMode.allCases) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .onChange(of: model.mode) { _, _ in model.apply() }
-                    Toggle("Video output (frames discarded)", isOn: $model.useOutput)
-                        .onChange(of: model.useOutput) { _, _ in if model.mode != .off { model.apply() } }
-                    Toggle("Zoom slider control", isOn: $model.useZoomControl)
-                        .onChange(of: model.useZoomControl) { _, _ in if model.mode != .off { model.apply() } }
-                    Toggle("Intercept button events", isOn: $model.interceptEnabled)
-                }
-                if model.mode == .preview {
-                    Section {
-                        PreviewView(session: model.session)
-                            .frame(height: 180)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                }
-                Section("Result") {
-                    LabeledContent("Button events: began", value: "\(model.pressBegan)")
-                    LabeledContent("Button events: ended", value: "\(model.pressEnded)")
-                    LabeledContent("Light press / swipe events", value: "\(model.controlEvents)")
-                    Button("Clear counters and log", role: .destructive) { model.clear() }
-                }
-                Section {
-                    Text("Press Camera Control fully, lightly and with a swipe. A full press, the volume-down button and the Action button all arrive as the same button event, so test each one alone. Light press and swipe events only come from Camera Control.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                Section("Log") {
-                    if model.log.isEmpty {
-                        Text("No events yet").foregroundStyle(.secondary)
-                    }
-                    ForEach(model.log) { entry in
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(entry.time, format: .dateTime.hour().minute().second())
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                            Text(entry.text).font(.subheadline)
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Camera Control Test")
-            .background(CaptureEventView(model: model, enabled: model.interceptEnabled).allowsHitTesting(false))
-            .onChange(of: scenePhase) { _, phase in
-                model.add("app is \(phase)")
-            }
-        }
+        endedAt = Date()
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+        withAnimation(.smooth) { phase = .over }
     }
 }
 
 @main
-struct CameraControlTestApp: App {
+struct ApertureApp: App {
     var body: some Scene {
         WindowGroup { ContentView() }
     }
