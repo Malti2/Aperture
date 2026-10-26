@@ -65,11 +65,11 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
             if session.canAddOutput(output) { session.addOutput(output) }
         }
         if session.supportsControls {
-            let slider = AVCaptureSlider("Steer", symbolName: "arrow.left.and.right", in: 0...1, step: 0.005)
+            let slider = AVCaptureSlider("Steer", symbolName: "arrow.left.and.right", in: 0...1)
             slider.value = 0.5
             slider.setActionQueue(queue) { value in
                 engine.target = CGFloat(value)
-                if abs(value - 0.5) > 0.015 { DispatchQueue.main.async { engine.onSteer?() } }
+                DispatchQueue.main.async { engine.onSteer?(CGFloat(value)) }
             }
             if session.canAddControl(slider) { session.addControl(slider) }
             // A second control. A double light press on Camera Control switches between controls.
