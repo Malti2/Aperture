@@ -30,14 +30,19 @@ struct ContentView: View {
         .preferredColorScheme(.dark)
         .onAppear(perform: setup)
         .onChange(of: scenePhase) { _, new in
-            if new == .active {
+            // The Camera Control overlay can make the scene inactive.
+            // Keep the session running then, otherwise the overlay closes at once.
+            switch new {
+            case .active:
                 if !demo { cam.start(engine: engine) }
-            } else {
+            case .background:
                 cam.stop()
                 if phase == .playing {
                     engine.running = false
                     phase = .menu
                 }
+            default:
+                break
             }
         }
     }
@@ -200,6 +205,12 @@ struct ContentView: View {
             Text("Touch also works: drag to steer, tap the bolt to dash.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if !demo {
+                Text("\(cam.controlsInfo). Light presses seen: \(cam.overlayCount)")
+                    .font(.caption2)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(28)
         .frame(maxWidth: 340)
