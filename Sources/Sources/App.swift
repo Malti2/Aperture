@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum Phase { case menu, playing, over }
+enum Phase { case menu, playing, paused, over }
 
 struct ContentView: View {
     @StateObject private var cam = CameraService()
@@ -16,6 +16,7 @@ struct ContentView: View {
 
     private let demo = CommandLine.arguments.contains("-demo")
     private let autoplay = CommandLine.arguments.contains("-autoplay")
+    private let demoPaused = CommandLine.arguments.contains("-paused")
     private let demoSettings = CommandLine.arguments.contains("-settings")
 
     var body: some View {
@@ -25,6 +26,7 @@ struct ContentView: View {
             switch phase {
             case .menu: menuCard
             case .over: overCard
+            case .paused: pauseOverlay
             case .playing: EmptyView()
             }
         }
@@ -43,7 +45,7 @@ struct ContentView: View {
                 if !demo { cam.start(engine: engine) }
             case .background:
                 cam.stop()
-                if phase == .playing { enterMenu() }
+                if phase == .playing { pauseGame() }
             default:
                 break
             }
@@ -134,6 +136,13 @@ struct ContentView: View {
                                 .padding(.vertical, 10)
                                 .glassEffect(.regular, in: .capsule)
                             Spacer()
+                            if phase == .playing {
+                                Button { pauseGame() } label: {
+                                    Image(systemName: "pause.fill").frame(width: 38, height: 38)
+                                }
+                                .buttonStyle(.glass)
+                                .buttonBorderShape(.circle)
+                            }
                             Label(Engine.levelNames[min(max(engine.level, 0), 2)], systemImage: "speedometer")
                                 .font(.footnote.weight(.medium))
                                 .padding(.horizontal, 14)
@@ -263,6 +272,11 @@ struct ContentView: View {
         }
         enterMenu()
         if demoSettings { showSettings = true }
+        if demoPaused {
+            engine.bot = true
+            beginPlay()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { pauseGame() }
+        }
         if autoplay {
             engine.bot = true
             beginPlay()
@@ -272,7 +286,7 @@ struct ContentView: View {
     private func handlePress() {
         switch phase {
         case .playing: engine.dash()
-        case .menu: break
+        case .menu, .paused: break
         case .over: if Date().timeIntervalSince(endedAt) > 0.8 { retry() }
         }
     }
@@ -307,6 +321,29 @@ struct ContentView: View {
         }
     }
 
+    private func pauseGame() {
+        guard phase == .playing else { return }
+        engine.paused = true
+        withAnimation(.smooth) { phase = .paused }
+    }
+
+    private func resumeGame() {
+        guard phase == .paused else { return }
+        engine.paused = false
+        withAnimation(.smooth) { phase = .playing }
+    }
+
+    private var pauseOverlay: some View {
+        VStack(spacing: 22) {
+            Text("Paused")
+                .font(.system(size: 40, weight: .bold, design: .rounded))
+            SwipeToContinue { resumeGame() }
+                .frame(maxWidth: 300)
+        }
+        .padding(28)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 34, style: .continuous))
+    }
+
     private func beginPlay() {
         guard phase == .menu, !showSettings else { return }
         engine.holding = false
@@ -331,5 +368,43 @@ struct ContentView: View {
 struct ApertureApp: App {
     var body: some Scene {
         WindowGroup { ContentView() }
+    }
+}
+
+
+/// Slide-to-continue control in the style of the iOS call and alarm sliders.
+struct SwipeToContinue: View {
+    let onDone: () -> Void
+    @State private var offset: CGFloat = 0
+    private let knob: CGFloat = 56
+
+    var body: some View {
+        GeometryReader { geo in
+            let maxX = max(geo.size.width - knob - 8, 1)
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.clear)
+                    .glassEffect(.regular, in: Capsule())
+                Text("swipe to continue")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .opacity(1 - Double(offset / maxX))
+                Circle().fill(Color.clear)
+                    .frame(width: knob, height: knob)
+                    .glassEffect(.regular, in: Circle())
+                    .overlay(Image(systemName: "chevron.right").font(.title2.weight(.bold)))
+                    .offset(x: 4 + offset)
+                    .gesture(
+                        DragGesture()
+                            .onChanged { v in offset = min(max(v.translation.width, 0), maxX) }
+                            .onEnded { _ in
+                                let done = offset > maxX * 0.85
+                                withAnimation(.smooth) { offset = 0 }
+                                if done { onDone() }
+                            }
+                    )
+            }
+        }
+        .frame(height: knob + 8)
     }
 }
