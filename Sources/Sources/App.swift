@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum Phase { case menu, ready, playing, over }
+enum Phase { case menu, playing, over }
 
 struct ContentView: View {
     @StateObject private var cam = CameraService()
@@ -9,12 +9,14 @@ struct ContentView: View {
     @State private var best = UserDefaults.standard.integer(forKey: "best")
     @State private var lastScore = 0
     @State private var endedAt = Date.distantPast
-    @State private var readyAt = Date.distantFuture
+    @State private var showSettings = false
+    @AppStorage("steerGain") private var steerGain = 1.6
+    @AppStorage("haptics") private var haptics = true
     @Environment(\.scenePhase) private var scenePhase
 
     private let demo = CommandLine.arguments.contains("-demo")
     private let autoplay = CommandLine.arguments.contains("-autoplay")
-    private let showReady = CommandLine.arguments.contains("-ready")
+    private let demoSettings = CommandLine.arguments.contains("-settings")
 
     var body: some View {
         ZStack {
@@ -23,7 +25,6 @@ struct ContentView: View {
             switch phase {
             case .menu: menuCard
             case .over: overCard
-            case .ready: readyOverlay
             case .playing: EmptyView()
             }
         }
@@ -32,19 +33,17 @@ struct ContentView: View {
         .background(CaptureEventView(engine: engine).allowsHitTesting(false))
         .preferredColorScheme(.dark)
         .onAppear(perform: setup)
+        .sheet(isPresented: $showSettings) { settingsSheet }
+        .onChange(of: steerGain) { _, v in Engine.steerGain = CGFloat(v) }
         .onChange(of: scenePhase) { _, new in
             // The Camera Control overlay can make the scene inactive.
             // Keep the session running then, otherwise the overlay closes at once.
             switch new {
             case .active:
-                if !demo && (phase == .playing || phase == .ready) { cam.start(engine: engine) }
+                if !demo { cam.start(engine: engine) }
             case .background:
                 cam.stop()
-                if phase == .playing || phase == .ready {
-                    engine.running = false
-                    engine.holding = false
-                    phase = .menu
-                }
+                if phase == .playing { enterMenu() }
             default:
                 break
             }
@@ -64,7 +63,7 @@ struct ContentView: View {
             DragGesture(minimumDistance: 0)
                 .onChanged { value in
                     guard engine.size.width > 0 else { return }
-                    if phase == .ready { beginPlay(); return }
+                    if phase == .menu { beginPlay(); return }
                     guard phase == .playing else { return }
                     engine.target = min(max(value.location.x / engine.size.width, 0), 1)
                 }
@@ -141,11 +140,6 @@ struct ContentView: View {
                                 .padding(.vertical, 9)
                                 .glassEffect(.regular, in: .capsule)
                         }
-                        Label(cameraText, systemImage: "camera.fill")
-                            .font(.footnote.weight(.medium))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .glassEffect(.regular, in: .capsule)
                     }
                 }
                 .padding(.horizontal, 20)
@@ -175,39 +169,66 @@ struct ContentView: View {
         }
     }
 
-    private var cameraText: String {
-        if demo { return "Demo mode" }
-        switch cam.authorization {
-        case .authorized: return cam.running ? "Camera on, not recorded" : "Camera starting"
-        case .notDetermined: return "Camera off"
-        default: return "Camera blocked"
-        }
-    }
-
     // MARK: Cards
 
     private var menuCard: some View {
-        VStack(spacing: 18) {
-            Text("Aperture")
-                .font(.system(size: 44, weight: .bold, design: .rounded))
-            Text("Swipe Camera Control to steer. Click it to dash.")
-                .font(.callout)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-            if best > 0 {
-                Text("Best \(best)").font(.headline.monospacedDigit())
+        ZStack {
+            VStack(spacing: 16) {
+                Text("Aperture")
+                    .font(.system(size: 44, weight: .bold, design: .rounded))
+                Text("Swipe Camera Control to start")
+                    .font(.headline)
+                if best > 0 {
+                    Text("Best \(best)").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                }
+                Button { showSettings = true } label: {
+                    Image(systemName: "gearshape.fill").font(.title3).frame(width: 44, height: 44)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                Text("Or drag on the screen. Camera on, not recorded.")
+                    .font(.caption2)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.tertiary)
             }
-            Text("Camera on only while playing. Not recorded.")
-                .font(.caption2)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.tertiary)
-            Button("Play") { start() }
-                .buttonStyle(.glassProminent)
-                .controlSize(.large)
+            .padding(28)
+            .frame(maxWidth: 320)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 34, style: .continuous))
+            GeometryReader { geo in
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 30, weight: .bold))
+                    .padding(14)
+                    .glassEffect(.regular, in: Circle())
+                    .phaseAnimator([0.0, 10.0]) { view, dx in
+                        view.offset(x: dx)
+                    } animation: { _ in .easeInOut(duration: 0.6) }
+                    .position(x: geo.size.width - 40, y: geo.size.height * 0.62)
+            }
+            .allowsHitTesting(false)
         }
-        .padding(28)
-        .frame(maxWidth: 340)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 34, style: .continuous))
+    }
+
+    private var settingsSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    VStack(alignment: .leading) {
+                        Text("Steering speed")
+                        Slider(value: $steerGain, in: 1.0...2.6, step: 0.1)
+                    }
+                    Toggle("Haptics", isOn: $haptics)
+                }
+            }
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showSettings = false }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+        .preferredColorScheme(.dark)
     }
 
     private var overCard: some View {
@@ -215,9 +236,14 @@ struct ContentView: View {
             Text("Crashed").font(.system(size: 34, weight: .bold, design: .rounded))
             Text("\(lastScore)").font(.system(size: 56, weight: .bold, design: .rounded).monospacedDigit())
             Text("Best \(best)").font(.headline.monospacedDigit()).foregroundStyle(.secondary)
-            Button("Play again") { start() }
-                .buttonStyle(.glassProminent)
-                .controlSize(.large)
+            HStack(spacing: 12) {
+                Button("Back") { enterMenu() }
+                    .buttonStyle(.glass)
+                    .controlSize(.large)
+                Button("Retry") { retry() }
+                    .buttonStyle(.glassProminent)
+                    .controlSize(.large)
+            }
         }
         .padding(28)
         .frame(maxWidth: 320)
@@ -227,86 +253,65 @@ struct ContentView: View {
     // MARK: Flow
 
     private func setup() {
+        Engine.steerGain = CGFloat(steerGain)
         engine.onEnd = { DispatchQueue.main.async { finish() } }
-        engine.onDash = { UIImpactFeedbackGenerator(style: .rigid).impactOccurred() }
+        engine.onDash = { if haptics { UIImpactFeedbackGenerator(style: .rigid).impactOccurred() } }
         engine.pressHandler = { handlePress() }
         engine.onSteer = { value in
-            // Start only when the control moves away from the value it had when Ready began.
-            if phase == .ready && abs(value - engine.steerBaseline) > 0.015 { beginPlay() }
+            // Start only when the control moves away from the value it had when the menu appeared.
+            if phase == .menu && !showSettings && abs(value - engine.steerBaseline) > 0.015 { beginPlay() }
         }
-        if showReady { start() }
+        enterMenu()
+        if demoSettings { showSettings = true }
         if autoplay {
             engine.bot = true
-            start()
+            beginPlay()
         }
     }
 
     private func handlePress() {
         switch phase {
         case .playing: engine.dash()
-        case .menu: start()
-        case .ready: break
-        case .over: if Date().timeIntervalSince(endedAt) > 0.8 { start() }
+        case .menu: break
+        case .over: if Date().timeIntervalSince(endedAt) > 0.8 { retry() }
         }
     }
 
-    private func start() {
+    private func enterMenu() {
         let slider = engine.target
         engine.reset()
         engine.target = slider
         engine.steerBaseline = engine.rawSteer
-        if autoplay {
-            beginPlay()
+        engine.running = false
+        engine.holding = true
+        withAnimation(.smooth) { phase = .menu }
+        startCamera()
+    }
+
+    private func retry() {
+        let slider = engine.target
+        engine.reset()
+        engine.target = slider
+        engine.holding = false
+        engine.running = true
+        withAnimation(.smooth) { phase = .playing }
+        startCamera()
+    }
+
+    private func startCamera() {
+        guard !demo else { return }
+        if cam.authorization == .notDetermined {
+            cam.requestAccess(engine: engine)
         } else {
-            engine.running = false
-            engine.holding = true
-            withAnimation(.smooth) { phase = .ready }
-        }
-        if !demo {
-            if cam.authorization == .notDetermined {
-                cam.requestAccess(engine: engine)
-            } else {
-                cam.start(engine: engine)
-            }
+            cam.start(engine: engine)
         }
     }
 
     private func beginPlay() {
-        guard phase == .ready else { return }
+        guard phase == .menu, !showSettings else { return }
         engine.holding = false
         engine.running = true
         withAnimation(.smooth) { phase = .playing }
-    }
-
-    private var readyOverlay: some View {
-        GeometryReader { geo in
-            ZStack {
-                VStack(spacing: 8) {
-                    Text("Swipe to start")
-                        .font(.title2.weight(.bold))
-                    Text("Slide your finger along Camera Control, on the right edge of your iPhone. The game begins with your first swipe.")
-                        .font(.callout)
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.secondary)
-                    Text("No Camera Control? Drag on the screen instead.")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-                .padding(22)
-                .frame(maxWidth: 270)
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
-                .position(x: geo.size.width / 2 - 24, y: geo.size.height * 0.55)
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 34, weight: .bold))
-                    .padding(14)
-                    .glassEffect(.regular, in: Circle())
-                    .phaseAnimator([0.0, 10.0]) { view, dx in
-                        view.offset(x: dx)
-                    } animation: { _ in .easeInOut(duration: 0.6) }
-                    .position(x: geo.size.width - 40, y: geo.size.height * 0.62)
-            }
-        }
-        .allowsHitTesting(false)
     }
 
     private func finish() {
@@ -317,8 +322,7 @@ struct ContentView: View {
             UserDefaults.standard.set(best, forKey: "best")
         }
         endedAt = Date()
-        UINotificationFeedbackGenerator().notificationOccurred(.error)
-        if !demo { cam.stop() }
+        if haptics { UINotificationFeedbackGenerator().notificationOccurred(.error) }
         withAnimation(.smooth) { phase = .over }
     }
 }
