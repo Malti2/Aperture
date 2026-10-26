@@ -69,6 +69,7 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
             slider.value = 0.5
             slider.setActionQueue(queue) { value in
                 engine.target = CGFloat(value)
+                if abs(value - 0.5) > 0.015 { DispatchQueue.main.async { engine.onSteer?() } }
             }
             if session.canAddControl(slider) { session.addControl(slider) }
             // A second control. A double light press on Camera Control switches between controls.
