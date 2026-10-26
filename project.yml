@@ -14,7 +14,7 @@ targets:
     sources: [Sources]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: de.malte.cameracontroltest
+        PRODUCT_BUNDLE_IDENTIFIER: de.malte.aperture
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: "Aperture"
         INFOPLIST_KEY_NSCameraUsageDescription: "Aperture keeps the camera running without recording so the Camera Control button works as a game controller. Nothing is saved or sent."
