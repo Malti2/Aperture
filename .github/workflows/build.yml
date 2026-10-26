@@ -84,4 +84,15 @@ jobs:
           gh release create v1.2.0 --repo "$GITHUB_REPOSITORY" --draft --target main \
             --title "Aperture 1.2.0 (unsigned)" \
             --notes "Unsigned IPA. Sign and install it yourself." \
-            out/Aperture-ipa/Aperture.ipa out/simulator-screenshots/screenshot-menu.png out/simulator-screenshots/screenshot-game.png out/simulator-screenshots/screenshot-settings.png out/simulator-screenshots/screenshot-paused.png out/simulator-screenshots/screenshot-shop.png
+            out/Aperture-ipa/Aperture.ipa
+      - name: Publish previews branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd out/simulator-screenshots
+          git init -q -b previews
+          git config user.name github-actions
+          git config user.email actions@users.noreply.github.com
+          git add .
+          git commit -qm "Screenshots for $GITHUB_SHA"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" previews
