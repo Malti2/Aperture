@@ -76,8 +76,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete v1.1.5 --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
-          gh release create v1.1.5 --repo "$GITHUB_REPOSITORY" --draft --target main \
-            --title "Aperture 1.1.5 (unsigned)" \
+          gh release delete v1.1.6 --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create v1.1.6 --repo "$GITHUB_REPOSITORY" --draft --target main \
+            --title "Aperture 1.1.6 (unsigned)" \
             --notes "Unsigned IPA. Sign and install it yourself." \
             out/Aperture-ipa/Aperture.ipa out/simulator-screenshots/screenshot-menu.png out/simulator-screenshots/screenshot-game.png out/simulator-screenshots/screenshot-settings.png out/simulator-screenshots/screenshot-paused.png
