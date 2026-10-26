@@ -277,7 +277,7 @@ struct ContentView: View {
         let slider = engine.target
         engine.reset()
         engine.target = slider
-        engine.steerBaseline = slider
+        engine.steerBaseline = engine.rawSteer
         if autoplay {
             beginPlay()
         } else {
