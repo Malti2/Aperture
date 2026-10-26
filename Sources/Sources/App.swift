@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum Phase { case menu, playing, over }
+enum Phase { case menu, ready, playing, over }
 
 struct ContentView: View {
     @StateObject private var cam = CameraService()
@@ -9,10 +9,13 @@ struct ContentView: View {
     @State private var best = UserDefaults.standard.integer(forKey: "best")
     @State private var lastScore = 0
     @State private var endedAt = Date.distantPast
+    @State private var showBanner = false
+    @State private var readyAt = Date.distantFuture
     @Environment(\.scenePhase) private var scenePhase
 
     private let demo = CommandLine.arguments.contains("-demo")
     private let autoplay = CommandLine.arguments.contains("-autoplay")
+    private let showReady = CommandLine.arguments.contains("-ready")
 
     var body: some View {
         ZStack {
@@ -21,6 +24,7 @@ struct ContentView: View {
             switch phase {
             case .menu: menuCard
             case .over: overCard
+            case .ready: readyOverlay
             case .playing: EmptyView()
             }
         }
@@ -28,17 +32,29 @@ struct ContentView: View {
         .background(Color.black)
         .background(CaptureEventView(engine: engine).allowsHitTesting(false))
         .preferredColorScheme(.dark)
+        .overlay(alignment: .top) {
+            if showBanner {
+                Label("Camera on for Camera Control. Nothing is recorded.", systemImage: "camera.fill")
+                    .font(.footnote.weight(.semibold))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .glassEffect(.regular, in: Capsule())
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .onAppear(perform: setup)
         .onChange(of: scenePhase) { _, new in
             // The Camera Control overlay can make the scene inactive.
             // Keep the session running then, otherwise the overlay closes at once.
             switch new {
             case .active:
-                if !demo { cam.start(engine: engine) }
+                if !demo && (phase == .playing || phase == .ready) { cam.start(engine: engine) }
             case .background:
                 cam.stop()
-                if phase == .playing {
+                if phase == .playing || phase == .ready {
                     engine.running = false
+                    engine.holding = false
                     phase = .menu
                 }
             default:
@@ -59,7 +75,9 @@ struct ContentView: View {
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { value in
-                    guard phase == .playing, engine.size.width > 0 else { return }
+                    guard engine.size.width > 0 else { return }
+                    if phase == .ready { beginPlay(); return }
+                    guard phase == .playing else { return }
                     engine.target = min(max(value.location.x / engine.size.width, 0), 1)
                 }
         )
@@ -191,10 +209,8 @@ struct ContentView: View {
             if best > 0 {
                 Text("Best \(best)").font(.headline.monospacedDigit())
             }
-            if cam.authorization != .authorized && !demo {
-                Button("Enable Camera Control") { cam.requestAccess(engine: engine) }
-                    .buttonStyle(.glass)
-                Text("The camera runs without recording so the button works. Nothing is saved or sent.")
+            if !demo {
+                Text("The camera turns on only while you play, so Camera Control works. Nothing is recorded, saved or sent.")
                     .font(.caption)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
@@ -237,7 +253,10 @@ struct ContentView: View {
         engine.onEnd = { DispatchQueue.main.async { finish() } }
         engine.onDash = { UIImpactFeedbackGenerator(style: .rigid).impactOccurred() }
         engine.pressHandler = { handlePress() }
-        if !demo { cam.start(engine: engine) }
+        engine.onSteer = {
+            if phase == .ready && Date().timeIntervalSince(readyAt) > 0.4 { beginPlay() }
+        }
+        if showReady { start() }
         if autoplay {
             engine.bot = true
             start()
@@ -248,14 +267,78 @@ struct ContentView: View {
         switch phase {
         case .playing: engine.dash()
         case .menu: start()
+        case .ready: break
         case .over: if Date().timeIntervalSince(endedAt) > 0.8 { start() }
         }
     }
 
     private func start() {
         engine.reset()
+        if autoplay {
+            beginPlay()
+        } else {
+            engine.running = false
+            engine.holding = true
+            engine.target = 0.5
+            readyAt = Date()
+            withAnimation(.smooth) { phase = .ready }
+        }
+        if !demo {
+            if cam.authorization == .notDetermined {
+                cam.requestAccess(engine: engine)
+            } else {
+                cam.start(engine: engine)
+            }
+        }
+        announceCamera()
+    }
+
+    private func beginPlay() {
+        guard phase == .ready else { return }
+        engine.holding = false
         engine.running = true
         withAnimation(.smooth) { phase = .playing }
+    }
+
+    private var readyOverlay: some View {
+        GeometryReader { geo in
+            ZStack {
+                VStack(spacing: 8) {
+                    Text("Swipe to start")
+                        .font(.title2.weight(.bold))
+                    Text("Slide your finger along Camera Control, on the right edge of your iPhone. The game begins with your first swipe.")
+                        .font(.callout)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                    Text("No Camera Control? Drag on the screen instead.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(22)
+                .frame(maxWidth: 270)
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+                .position(x: geo.size.width / 2 - 24, y: geo.size.height * 0.55)
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 34, weight: .bold))
+                    .padding(14)
+                    .glassEffect(.regular, in: Circle())
+                    .phaseAnimator([0.0, 10.0]) { view, dx in
+                        view.offset(x: dx)
+                    } animation: { _ in .easeInOut(duration: 0.6) }
+                    .position(x: geo.size.width - 40, y: geo.size.height * 0.62)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func announceCamera() {
+        guard cam.authorization != .denied && cam.authorization != .restricted else { return }
+        withAnimation(.smooth) { showBanner = true }
+        Task {
+            if demo { return }
+            try? await Task.sleep(for: .seconds(3.5))
+            withAnimation(.smooth) { showBanner = false }
+        }
     }
 
     private func finish() {
@@ -267,6 +350,7 @@ struct ContentView: View {
         }
         endedAt = Date()
         UINotificationFeedbackGenerator().notificationOccurred(.error)
+        if !demo { cam.stop() }
         withAnimation(.smooth) { phase = .over }
     }
 }
