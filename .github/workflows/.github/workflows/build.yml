@@ -1,0 +1,52 @@
+name: Build
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  ipa:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate project
+        run: brew install xcodegen && xcodegen generate
+      - name: Build unsigned device app
+        run: |
+          xcodebuild -project CameraControlTest.xcodeproj -scheme CameraControlTest \
+            -configuration Release -sdk iphoneos -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+      - name: Package IPA
+        run: |
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/CameraControlTest.app Payload/
+          zip -qr CameraControlTest.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CameraControlTest-ipa
+          path: CameraControlTest.ipa
+          retention-days: 1
+  screenshot:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate project
+        run: brew install xcodegen && xcodegen generate
+      - name: Build for simulator
+        run: |
+          xcodebuild -project CameraControlTest.xcodeproj -scheme CameraControlTest \
+            -configuration Debug -sdk iphonesimulator -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Screenshot
+        run: |
+          DEV=$(xcrun simctl list devices available | grep -m1 "iPhone" | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
+          xcrun simctl boot "$DEV"
+          xcrun simctl ui "$DEV" appearance dark
+          xcrun simctl install "$DEV" build/Build/Products/Debug-iphonesimulator/CameraControlTest.app
+          xcrun simctl launch "$DEV" de.malte.cameracontroltest
+          sleep 6
+          xcrun simctl io "$DEV" screenshot screenshot.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: simulator-screenshot
+          path: screenshot.png
+          retention-days: 1
