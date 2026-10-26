@@ -23,6 +23,8 @@ final class Engine {
     var rawSteer: CGFloat = 0.5
     /// Slider travel is bounded, so the middle part of it reaches the whole field.
     static var steerGain: CGFloat = 1.6
+    /// 0.005 (earlier step) divided by 0.001 (current step).
+    static let stepScale: CGFloat = 5
     var bot = false
     var level = 1
     static let levelNames = ["Calm", "Normal", "Fast"]
