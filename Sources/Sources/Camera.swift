@@ -14,8 +14,6 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
     private let queue = DispatchQueue(label: "aperture.camera")
     private var configured = false
     private var steerSlider: AVCaptureSlider?
-    private var echoUntil = Date.distantPast
-    private var echoPending = false
 
     override init() {
         super.init()
@@ -54,6 +52,15 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
         }
     }
 
+    /// Puts the control back to the middle. Called only on menu, retry and resume, never during a round.
+    func recenter(engine: Engine) {
+        queue.async { [weak self] in
+            guard let self = self, let s = self.steerSlider else { return }
+            engine.rawSteer = 0.5
+            s.value = 0.5
+        }
+    }
+
     func stop() {
         queue.async { [weak self] in
             guard let self = self else { return }
@@ -72,19 +79,10 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
             if session.canAddOutput(output) { session.addOutput(output) }
         }
         if session.supportsControls {
-            let slider = AVCaptureSlider("Steer", symbolName: "arrow.left.and.right", in: 0...1, step: 0.005)
+            let slider = AVCaptureSlider("Steer", symbolName: "arrow.left.and.right", in: 0...1, step: 0.001)
             slider.value = 0.5
             steerSlider = slider
-            slider.setActionQueue(queue) { [weak self] value in
-                guard let self = self else { return }
-                let now = Date()
-                // Swallow exactly one callback with the centre value after our own recentering.
-                if self.echoPending && now < self.echoUntil && abs(value - 0.5) < 0.0025 {
-                    self.echoPending = false
-                    engine.rawSteer = 0.5
-                    return
-                }
-                self.echoPending = false
+            slider.setActionQueue(queue) { value in
                 // Relative mapping: the ball moves by the slider delta times the gain.
                 let delta = CGFloat(value) - engine.rawSteer
                 engine.rawSteer = CGFloat(value)
@@ -92,13 +90,6 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
                     engine.target = min(max(engine.target + delta * Engine.steerGain, 0), 1)
                 }
                 DispatchQueue.main.async { engine.onSteer?(CGFloat(value)) }
-                // Experiment: recentre the control near its ends so swiping can continue.
-                if engine.running && !engine.paused && abs(value - 0.5) > 0.3 {
-                    self.echoUntil = now.addingTimeInterval(0.2)
-                    self.echoPending = true
-                    self.steerSlider?.value = 0.5
-                    engine.rawSteer = 0.5
-                }
             }
             if session.canAddControl(slider) { session.addControl(slider) }
             // A second control. A double light press on Camera Control switches between controls.
