@@ -15,6 +15,7 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
     private var configured = false
     private var steerSlider: AVCaptureSlider?
     private var echoUntil = Date.distantPast
+    private var echoPending = false
 
     override init() {
         super.init()
@@ -77,11 +78,13 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
             slider.setActionQueue(queue) { [weak self] value in
                 guard let self = self else { return }
                 let now = Date()
-                // Ignore the echo of our own recentering.
-                if now < self.echoUntil && abs(value - 0.5) < 0.002 {
+                // Swallow exactly one callback with the centre value after our own recentering.
+                if self.echoPending && now < self.echoUntil && abs(value - 0.5) < 0.0025 {
+                    self.echoPending = false
                     engine.rawSteer = 0.5
                     return
                 }
+                self.echoPending = false
                 // Relative mapping: the ball moves by the slider delta times the gain.
                 let delta = CGFloat(value) - engine.rawSteer
                 engine.rawSteer = CGFloat(value)
@@ -92,6 +95,7 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
                 // Experiment: recentre the control near its ends so swiping can continue.
                 if engine.running && !engine.paused && abs(value - 0.5) > 0.3 {
                     self.echoUntil = now.addingTimeInterval(0.2)
+                    self.echoPending = true
                     self.steerSlider?.value = 0.5
                     engine.rawSteer = 0.5
                 }
