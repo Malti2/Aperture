@@ -65,7 +65,7 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
             if session.canAddOutput(output) { session.addOutput(output) }
         }
         if session.supportsControls {
-            let slider = AVCaptureSlider("Steer", symbolName: "arrow.left.and.right", in: 0...1)
+            let slider = AVCaptureSlider("Steer", symbolName: "arrow.left.and.right", in: 0...1, step: 0.005)
             slider.value = 0.5
             slider.setActionQueue(queue) { value in
                 engine.target = CGFloat(value)
