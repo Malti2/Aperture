@@ -253,8 +253,9 @@ struct ContentView: View {
         engine.onEnd = { DispatchQueue.main.async { finish() } }
         engine.onDash = { UIImpactFeedbackGenerator(style: .rigid).impactOccurred() }
         engine.pressHandler = { handlePress() }
-        engine.onSteer = {
-            if phase == .ready && Date().timeIntervalSince(readyAt) > 0.4 { beginPlay() }
+        engine.onSteer = { value in
+            // Start only when the control moves away from the value it had when Ready began.
+            if phase == .ready && abs(value - engine.steerBaseline) > 0.015 { beginPlay() }
         }
         if showReady { start() }
         if autoplay {
@@ -273,14 +274,15 @@ struct ContentView: View {
     }
 
     private func start() {
+        let slider = engine.target
         engine.reset()
+        engine.target = slider
+        engine.steerBaseline = slider
         if autoplay {
             beginPlay()
         } else {
             engine.running = false
             engine.holding = true
-            engine.target = 0.5
-            readyAt = Date()
             withAnimation(.smooth) { phase = .ready }
         }
         if !demo {
