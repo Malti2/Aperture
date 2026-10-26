@@ -84,10 +84,12 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
             steerSlider = slider
             slider.setActionQueue(queue) { value in
                 // Relative mapping: the ball moves by the slider delta times the gain.
+                // A swipe delivers roughly a fixed number of steps, so the delta shrinks with the step size.
+                // stepScale keeps the same feel as the earlier 0.005 step.
                 let delta = CGFloat(value) - engine.rawSteer
                 engine.rawSteer = CGFloat(value)
                 if !engine.paused {
-                    engine.target = min(max(engine.target + delta * Engine.steerGain, 0), 1)
+                    engine.target = min(max(engine.target + delta * Engine.steerGain * Engine.stepScale, 0), 1)
                 }
                 DispatchQueue.main.async { engine.onSteer?(CGFloat(value)) }
             }
