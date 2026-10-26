@@ -43,23 +43,23 @@ jobs:
           xcrun simctl boot "$DEV"
           xcrun simctl bootstatus "$DEV" -b
           xcrun simctl install "$DEV" build/Build/Products/Debug-iphonesimulator/CameraControlTest.app
-          xcrun simctl launch "$DEV" de.malte.cameracontroltest -demo
+          xcrun simctl launch "$DEV" de.malte.aperture -demo
           sleep 6
           xcrun simctl io "$DEV" screenshot screenshot-menu.png
-          xcrun simctl terminate "$DEV" de.malte.cameracontroltest
-          xcrun simctl launch "$DEV" de.malte.cameracontroltest -demo -settings
+          xcrun simctl terminate "$DEV" de.malte.aperture
+          xcrun simctl launch "$DEV" de.malte.aperture -demo -settings
           sleep 6
           xcrun simctl io "$DEV" screenshot screenshot-settings.png
-          xcrun simctl terminate "$DEV" de.malte.cameracontroltest
-          xcrun simctl launch "$DEV" de.malte.cameracontroltest -demo -paused
+          xcrun simctl terminate "$DEV" de.malte.aperture
+          xcrun simctl launch "$DEV" de.malte.aperture -demo -paused
           sleep 6
           xcrun simctl io "$DEV" screenshot screenshot-paused.png
-          xcrun simctl terminate "$DEV" de.malte.cameracontroltest
-          xcrun simctl launch "$DEV" de.malte.cameracontroltest -demo -shop
+          xcrun simctl terminate "$DEV" de.malte.aperture
+          xcrun simctl launch "$DEV" de.malte.aperture -demo -shop
           sleep 6
           xcrun simctl io "$DEV" screenshot screenshot-shop.png
-          xcrun simctl terminate "$DEV" de.malte.cameracontroltest
-          xcrun simctl launch "$DEV" de.malte.cameracontroltest -demo -autoplay
+          xcrun simctl terminate "$DEV" de.malte.aperture
+          xcrun simctl launch "$DEV" de.malte.aperture -demo -autoplay
           sleep 9
           xcrun simctl io "$DEV" screenshot screenshot-game.png
       - uses: actions/upload-artifact@v4
