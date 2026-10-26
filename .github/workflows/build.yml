@@ -19,11 +19,11 @@ jobs:
         run: |
           mkdir Payload
           cp -R build/Build/Products/Release-iphoneos/CameraControlTest.app Payload/
-          zip -qr CameraControlTest.ipa Payload
+          zip -qr Aperture.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
-          name: CameraControlTest-ipa
-          path: CameraControlTest.ipa
+          name: Aperture-ipa
+          path: Aperture.ipa
           retention-days: 1
   screenshot:
     runs-on: macos-26
@@ -76,8 +76,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete v1.1.4 --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
-          gh release create v1.1.4 --repo "$GITHUB_REPOSITORY" --draft --target main \
-            --title "Aperture 1.1.4 (unsigned)" \
+          gh release delete v1.1.5 --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create v1.1.5 --repo "$GITHUB_REPOSITORY" --draft --target main \
+            --title "Aperture 1.1.5 (unsigned)" \
             --notes "Unsigned IPA. Sign and install it yourself." \
-            out/CameraControlTest-ipa/CameraControlTest.ipa out/simulator-screenshots/screenshot-menu.png out/simulator-screenshots/screenshot-game.png out/simulator-screenshots/screenshot-settings.png out/simulator-screenshots/screenshot-paused.png
+            out/Aperture-ipa/Aperture.ipa out/simulator-screenshots/screenshot-menu.png out/simulator-screenshots/screenshot-game.png out/simulator-screenshots/screenshot-settings.png out/simulator-screenshots/screenshot-paused.png
