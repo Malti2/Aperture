@@ -9,7 +9,6 @@ struct ContentView: View {
     @State private var best = UserDefaults.standard.integer(forKey: "best")
     @State private var lastScore = 0
     @State private var endedAt = Date.distantPast
-    @State private var showBanner = false
     @State private var readyAt = Date.distantFuture
     @Environment(\.scenePhase) private var scenePhase
 
@@ -32,17 +31,6 @@ struct ContentView: View {
         .background(Color.black)
         .background(CaptureEventView(engine: engine).allowsHitTesting(false))
         .preferredColorScheme(.dark)
-        .overlay(alignment: .top) {
-            if showBanner {
-                Label("Camera on for Camera Control. Nothing is recorded.", systemImage: "camera.fill")
-                    .font(.footnote.weight(.semibold))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .glassEffect(.regular, in: Capsule())
-                    .padding(.top, 8)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
         .onAppear(perform: setup)
         .onChange(of: scenePhase) { _, new in
             // The Camera Control overlay can make the scene inactive.
@@ -202,31 +190,20 @@ struct ContentView: View {
         VStack(spacing: 18) {
             Text("Aperture")
                 .font(.system(size: 44, weight: .bold, design: .rounded))
-            Text("Swipe Camera Control to steer through the gaps. Press it fully to dash through a wall. Double light press to switch to the Speed control.")
+            Text("Swipe Camera Control to steer. Click it to dash.")
                 .font(.callout)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
             if best > 0 {
                 Text("Best \(best)").font(.headline.monospacedDigit())
             }
-            if !demo {
-                Text("The camera turns on only while you play, so Camera Control works. Nothing is recorded, saved or sent.")
-                    .font(.caption)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
-            }
+            Text("Camera on only while playing. Not recorded.")
+                .font(.caption2)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.tertiary)
             Button("Play") { start() }
                 .buttonStyle(.glassProminent)
                 .controlSize(.large)
-            Text("Touch also works: drag to steer, tap the bolt to dash.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            if !demo {
-                Text("\(cam.controlsInfo). Overlay activations: \(cam.overlayCount)")
-                    .font(.caption2)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.tertiary)
-            }
         }
         .padding(28)
         .frame(maxWidth: 340)
@@ -292,7 +269,6 @@ struct ContentView: View {
                 cam.start(engine: engine)
             }
         }
-        announceCamera()
     }
 
     private func beginPlay() {
@@ -331,16 +307,6 @@ struct ContentView: View {
             }
         }
         .allowsHitTesting(false)
-    }
-
-    private func announceCamera() {
-        guard cam.authorization != .denied && cam.authorization != .restricted else { return }
-        withAnimation(.smooth) { showBanner = true }
-        Task {
-            if demo { return }
-            try? await Task.sleep(for: .seconds(3.5))
-            withAnimation(.smooth) { showBanner = false }
-        }
     }
 
     private func finish() {
