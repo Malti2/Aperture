@@ -71,7 +71,7 @@ final class CameraService: NSObject, ObservableObject {
             if session.canAddControl(slider) { session.addControl(slider) }
             // A second control. A double light press on Camera Control switches between controls.
             let picker = AVCaptureIndexPicker("Speed", symbolName: "speedometer", localizedIndexTitles: Engine.levelNames)
-            picker.value = 1
+            picker.selectedIndex = 1
             picker.setActionQueue(queue) { index in
                 engine.level = index
             }
