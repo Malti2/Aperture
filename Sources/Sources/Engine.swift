@@ -30,6 +30,12 @@ final class Engine {
     static let levelNames = ["Calm", "Normal", "Fast"]
     private var levelScale: CGFloat { [0.8, 1.0, 1.25][min(max(level, 0), 2)] }
     private(set) var score: Double = 0
+    /// Floors passed this round, and the lightning earned for them. Dashed floors count the same.
+    private(set) var floors = 0
+    private(set) var lightning = 0
+    var onFloor: (() -> Void)?
+    /// Prototype curve: floors 1-5 give 1 lightning each, 6-10 give 2, 11-15 give 3, and so on.
+    static func reward(forFloor n: Int) -> Int { 1 + max(0, n - 1) / 5 }
     private(set) var dashLeft: Double = 0
     private(set) var cooldown: Double = 0
     private(set) var worldSpeed: CGFloat = 0
@@ -56,6 +62,8 @@ final class Engine {
         bars = []
         trail = []
         score = 0
+        floors = 0
+        lightning = 0
         dashLeft = 0
         cooldown = 0
         travel = 150
@@ -146,6 +154,9 @@ final class Engine {
             if !bars[i].passed && b.y > py + radius {
                 bars[i].passed = true
                 score += bars[i].dashed ? 25 : 10
+                floors += 1
+                lightning += Engine.reward(forFloor: floors)
+                onFloor?()
             }
         }
     }
