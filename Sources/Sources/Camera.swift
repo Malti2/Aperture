@@ -4,9 +4,11 @@ import AVKit
 
 /// Keeps a camera session running without preview, recording or storage.
 /// The session exists only so the system delivers Camera Control events.
-final class CameraService: NSObject, ObservableObject {
+final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsDelegate {
     @Published var authorization = AVCaptureDevice.authorizationStatus(for: .video)
     @Published var running = false
+    @Published var controlsInfo = "Controls: not set up yet"
+    @Published var overlayCount = 0
 
     private let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "aperture.camera")
@@ -78,7 +80,23 @@ final class CameraService: NSObject, ObservableObject {
             if session.canAddControl(picker) { session.addControl(picker) }
         }
         session.commitConfiguration()
+        let info: String
+        if session.supportsControls {
+            session.setControlsDelegate(self, queue: queue)
+            info = "Camera Control: \(session.controls.count) of \(session.maxControlsCount) controls registered"
+        } else {
+            info = "Camera Control: not supported on this device"
+        }
+        DispatchQueue.main.async { self.controlsInfo = info }
     }
+
+    // MARK: AVCaptureSessionControlsDelegate
+    func sessionControlsDidBecomeActive(_ session: AVCaptureSession) {
+        DispatchQueue.main.async { self.overlayCount += 1 }
+    }
+    func sessionControlsWillEnterFullscreenAppearance(_ session: AVCaptureSession) {}
+    func sessionControlsWillExitFullscreenAppearance(_ session: AVCaptureSession) {}
+    func sessionControlsDidBecomeInactive(_ session: AVCaptureSession) {}
 }
 
 /// Receives full presses of Camera Control (and other capture buttons).
