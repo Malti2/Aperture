@@ -21,7 +21,7 @@ final class Engine {
     var steerBaseline: CGFloat = 0.5
     var rawSteer: CGFloat = 0.5
     /// Slider travel is bounded, so the middle part of it reaches the whole field.
-    static let steerGain: CGFloat = 1.6
+    static var steerGain: CGFloat = 1.6
     var bot = false
     var level = 1
     static let levelNames = ["Calm", "Normal", "Fast"]
