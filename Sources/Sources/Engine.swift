@@ -16,6 +16,8 @@ final class Engine {
     private(set) var bars: [Bar] = []
     private(set) var trail: [CGFloat] = []
     var running = false
+    var holding = false
+    var onSteer: (() -> Void)?
     var bot = false
     var level = 1
     static let levelNames = ["Calm", "Normal", "Fast"]
@@ -93,8 +95,9 @@ final class Engine {
             let ahead = bars.filter { !$0.passed }.max(by: { $0.y < $1.y })
             if let b = ahead { target = b.gapX / size.width }
         }
-        px += (target - px) * CGFloat(1 - exp(-dt * 16))
+        px += (target - px) * CGFloat(1 - exp(-dt * 34))
         px = min(max(px, 0), 1)
+        if holding { return }
 
         // World
         for i in bars.indices { bars[i].y += v * d }
