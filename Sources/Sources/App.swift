@@ -305,6 +305,8 @@ struct ContentView: View {
         engine.steerBaseline = engine.rawSteer
         engine.running = false
         engine.holding = true
+        cam.recenter(engine: engine)
+        engine.steerBaseline = 0.5
         withAnimation(.smooth) { phase = .menu }
         startCamera()
     }
@@ -315,6 +317,7 @@ struct ContentView: View {
         engine.target = slider
         engine.holding = false
         engine.running = true
+        cam.recenter(engine: engine)
         withAnimation(.smooth) { phase = .playing }
         startCamera()
     }
@@ -337,6 +340,7 @@ struct ContentView: View {
     private func resumeGame() {
         guard phase == .paused else { return }
         engine.paused = false
+        cam.recenter(engine: engine)
         withAnimation(.smooth) { phase = .playing }
     }
 
