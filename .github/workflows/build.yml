@@ -55,6 +55,10 @@ jobs:
           sleep 6
           xcrun simctl io "$DEV" screenshot screenshot-paused.png
           xcrun simctl terminate "$DEV" de.malte.cameracontroltest
+          xcrun simctl launch "$DEV" de.malte.cameracontroltest -demo -shop
+          sleep 6
+          xcrun simctl io "$DEV" screenshot screenshot-shop.png
+          xcrun simctl terminate "$DEV" de.malte.cameracontroltest
           xcrun simctl launch "$DEV" de.malte.cameracontroltest -demo -autoplay
           sleep 9
           xcrun simctl io "$DEV" screenshot screenshot-game.png
@@ -76,8 +80,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete v1.1.6 --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
-          gh release create v1.1.6 --repo "$GITHUB_REPOSITORY" --draft --target main \
-            --title "Aperture 1.1.6 (unsigned)" \
+          gh release delete v1.2.0 --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create v1.2.0 --repo "$GITHUB_REPOSITORY" --draft --target main \
+            --title "Aperture 1.2.0 (unsigned)" \
             --notes "Unsigned IPA. Sign and install it yourself." \
-            out/Aperture-ipa/Aperture.ipa out/simulator-screenshots/screenshot-menu.png out/simulator-screenshots/screenshot-game.png out/simulator-screenshots/screenshot-settings.png out/simulator-screenshots/screenshot-paused.png
+            out/Aperture-ipa/Aperture.ipa out/simulator-screenshots/screenshot-menu.png out/simulator-screenshots/screenshot-game.png out/simulator-screenshots/screenshot-settings.png out/simulator-screenshots/screenshot-paused.png out/simulator-screenshots/screenshot-shop.png
