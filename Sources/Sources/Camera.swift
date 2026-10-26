@@ -72,7 +72,7 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
                 // so reversing at an edge responds at once (no hidden dead zone).
                 let delta = CGFloat(value) - engine.rawSteer
                 engine.rawSteer = CGFloat(value)
-                engine.target = min(max(engine.target + delta * Engine.steerGain, 0), 1)
+                if !engine.paused { engine.target = min(max(engine.target + delta * Engine.steerGain, 0), 1) }
                 DispatchQueue.main.async { engine.onSteer?(CGFloat(value)) }
             }
             if session.canAddControl(slider) { session.addControl(slider) }
