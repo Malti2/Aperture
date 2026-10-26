@@ -1,6 +1,22 @@
 import SwiftUI
 
-enum Phase { case menu, playing, paused, over }
+enum Phase { case menu, shop, playing, paused, over }
+
+struct BallSkin {
+    let name: String
+    let color: Color
+    let cost: Int
+}
+
+/// Prototype prices. Not final.
+let ballSkins: [BallSkin] = [
+    BallSkin(name: "Pearl", color: .white, cost: 0),
+    BallSkin(name: "Azure", color: Color(red: 0.35, green: 0.62, blue: 0.95), cost: 150),
+    BallSkin(name: "Ember", color: Color(red: 0.85, green: 0.30, blue: 0.30), cost: 300),
+    BallSkin(name: "Amber", color: Color(red: 0.95, green: 0.68, blue: 0.25), cost: 450),
+    BallSkin(name: "Jade", color: Color(red: 0.30, green: 0.80, blue: 0.55), cost: 600),
+    BallSkin(name: "Violet", color: Color(red: 0.62, green: 0.45, blue: 0.95), cost: 800)
+]
 
 struct ContentView: View {
     @StateObject private var cam = CameraService()
@@ -12,12 +28,24 @@ struct ContentView: View {
     @State private var showSettings = false
     @AppStorage("steerGain") private var steerGain = 1.6
     @AppStorage("haptics") private var haptics = true
+    @AppStorage("bank") private var bank = 0
+    @AppStorage("owned") private var ownedRaw = "0"
+    @AppStorage("equipped") private var equipped = 0
+    @State private var credited = 0
+    @State private var selected = 0
+    @State private var shopAccum: CGFloat = 0
+    @State private var shopLast: CGFloat = 0.5
+    @State private var shopEntered = Date.distantPast
+    @State private var holdStart: Date? = nil
+    @State private var holdToken = 0
+    @State private var shopNote = ""
     @Environment(\.scenePhase) private var scenePhase
 
     private let demo = CommandLine.arguments.contains("-demo")
     private let autoplay = CommandLine.arguments.contains("-autoplay")
     private let demoPaused = CommandLine.arguments.contains("-paused")
     private let demoSettings = CommandLine.arguments.contains("-settings")
+    private let demoShop = CommandLine.arguments.contains("-shop")
 
     var body: some View {
         ZStack {
@@ -25,6 +53,7 @@ struct ContentView: View {
             hud
             switch phase {
             case .menu: menuCard
+            case .shop: shopView
             case .over: overCard
             case .paused: pauseOverlay
             case .playing: EmptyView()
@@ -37,6 +66,9 @@ struct ContentView: View {
         .onAppear(perform: setup)
         .sheet(isPresented: $showSettings) { settingsSheet }
         .onChange(of: steerGain) { _, v in Engine.steerGain = CGFloat(v) }
+        .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
+            if phase == .playing && !engine.paused { bankSync() }
+        }
         .onChange(of: showSettings) { _, open in
             if open {
                 cam.stop()
@@ -52,6 +84,7 @@ struct ContentView: View {
             case .active:
                 if !demo && !showSettings && phase != .over { cam.start(engine: engine) }
             case .background:
+                bankSync()
                 cam.stop()
                 if phase == .playing { pauseGame() }
             default:
@@ -127,7 +160,7 @@ struct ContentView: View {
                 center: CGPoint(x: x, y: y), startRadius: 0, endRadius: glowR
             )
         )
-        context.fill(Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)), with: .color(.white))
+        context.fill(Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)), with: .color(ballSkins[min(max(equipped, 0), ballSkins.count - 1)].color))
     }
 
     // MARK: HUD
@@ -138,7 +171,7 @@ struct ContentView: View {
                 GlassEffectContainer(spacing: 12) {
                     VStack(spacing: 10) {
                         HStack(spacing: 12) {
-                            Label("\(Int(engine.score))", systemImage: "bolt.fill")
+                            Label("\(bank)", systemImage: "bolt.fill")
                                 .font(.title3.weight(.semibold).monospacedDigit())
                                 .padding(.horizontal, 18)
                                 .padding(.vertical, 10)
@@ -198,11 +231,20 @@ struct ContentView: View {
                 if best > 0 {
                     Text("Best \(best)").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
                 }
-                Button { showSettings = true } label: {
-                    Image(systemName: "gearshape.fill").font(.title3).frame(width: 44, height: 44)
+                HStack(spacing: 12) {
+                    Button { showSettings = true } label: {
+                        Image(systemName: "gearshape.fill").font(.title3).frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
+                    Button { enterShop() } label: {
+                        Label("Shop", systemImage: "circle.hexagongrid.fill")
+                            .font(.headline)
+                            .padding(.horizontal, 6)
+                            .frame(height: 44)
+                    }
+                    .buttonStyle(.glass)
                 }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
                 Text("Camera on, not recorded")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -266,6 +308,181 @@ struct ContentView: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 34, style: .continuous))
     }
 
+    // MARK: Bank and shop
+
+    /// Adds the lightning earned this round to the saved balance. Only the part not yet credited is added.
+    private func bankSync() {
+        let s = Int(engine.score)
+        if s > credited {
+            bank += s - credited
+            credited = s
+        }
+    }
+
+    private func owned(_ i: Int) -> Bool {
+        ownedRaw.split(separator: ",").compactMap { Int($0) }.contains(i)
+    }
+
+    private func enterShop() {
+        guard phase == .menu, !showSettings else { return }
+        cam.recenter(engine: engine)
+        shopLast = 0.5
+        shopAccum = 0
+        selected = min(max(equipped, 0), ballSkins.count - 1)
+        shopEntered = Date()
+        shopNote = ""
+        withAnimation(.smooth) { phase = .shop }
+    }
+
+    private func exitShop() {
+        cancelHold()
+        cam.recenter(engine: engine)
+        engine.steerBaseline = 0.5
+        withAnimation(.smooth) { phase = .menu }
+    }
+
+    /// Browsing. One step per detent of swipe distance. Prototype threshold.
+    private func shopSteer(_ value: CGFloat) {
+        let threshold: CGFloat = 0.05
+        shopAccum += value - shopLast
+        shopLast = value
+        while shopAccum >= threshold { shopAccum -= threshold; moveSelection(1) }
+        while shopAccum <= -threshold { shopAccum += threshold; moveSelection(-1) }
+    }
+
+    private func moveSelection(_ d: Int) {
+        let n = selected + d
+        guard n >= 0, n < ballSkins.count else { return }
+        cancelHold()
+        shopNote = ""
+        withAnimation(.smooth) { selected = n }
+        if haptics { UISelectionFeedbackGenerator().selectionChanged() }
+    }
+
+    private func equip(_ i: Int) {
+        equipped = i
+        if haptics { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+    }
+
+    private let holdTime = 0.9
+
+    private func beginHold() {
+        guard phase == .shop, Date().timeIntervalSince(shopEntered) > 0.6,
+              !owned(selected), holdStart == nil else { return }
+        let cost = ballSkins[selected].cost
+        if bank < cost {
+            shopNote = "Need \(cost - bank) more"
+            if haptics { UINotificationFeedbackGenerator().notificationOccurred(.warning) }
+            return
+        }
+        shopNote = ""
+        holdStart = Date()
+        holdToken += 1
+        let token = holdToken
+        let item = selected
+        if haptics { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + holdTime) {
+            guard holdToken == token, holdStart != nil, phase == .shop, selected == item else { return }
+            purchase(item)
+        }
+    }
+
+    private func cancelHold() {
+        holdStart = nil
+        holdToken += 1
+    }
+
+    private func purchase(_ i: Int) {
+        let cost = ballSkins[i].cost
+        guard !owned(i), bank >= cost else { cancelHold(); return }
+        bank -= cost
+        ownedRaw += ",\(i)"
+        equipped = i
+        cancelHold()
+        if haptics { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+    }
+
+    private var shopView: some View {
+        ZStack {
+            Color.black.opacity(0.3)
+            GeometryReader { geo in
+                ForEach(-1...1, id: \.self) { o in
+                    let i = selected + o
+                    if i >= 0 && i < ballSkins.count {
+                        let big = o == 0
+                        let size: CGFloat = big ? 210 : 90
+                        Circle()
+                            .fill(ballSkins[i].color)
+                            .opacity(big ? (owned(i) ? 1 : 0.8) : 0.4)
+                            .shadow(color: ballSkins[i].color.opacity(big ? 0.5 : 0), radius: 40)
+                            .frame(width: size, height: size)
+                            .position(x: geo.size.width * 0.4, y: geo.size.height * 0.42 + CGFloat(o) * 165)
+                            .onTapGesture { if !big { moveSelection(o) } }
+                    }
+                }
+                VStack(spacing: 8) {
+                    ForEach(0..<ballSkins.count, id: \.self) { i in
+                        Capsule()
+                            .fill(Color.white.opacity(i == selected ? 0.95 : 0.22))
+                            .frame(width: 6, height: i == selected ? 18 : 6)
+                    }
+                }
+                .position(x: geo.size.width - 34, y: geo.size.height * 0.42)
+            }
+            VStack {
+                Spacer()
+                HStack(alignment: .bottom) {
+                    shopAction
+                    Spacer()
+                    Button("Done") { exitShop() }
+                        .buttonStyle(.glass)
+                        .controlSize(.large)
+                }
+                .padding(.horizontal, 28)
+                .padding(.bottom, 54)
+            }
+        }
+    }
+
+    private var shopAction: some View {
+        let skin = ballSkins[min(max(selected, 0), ballSkins.count - 1)]
+        let isOwned = owned(selected)
+        return VStack(alignment: .leading, spacing: 10) {
+            Text(skin.name).font(.system(size: 34, weight: .bold, design: .rounded))
+            if isOwned {
+                Text(equipped == selected ? "Equipped" : "Click to equip")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                    .onTapGesture { if equipped != selected { equip(selected) } }
+            } else {
+                TimelineView(.animation) { tl in
+                    let p = holdStart.map { min(1, tl.date.timeIntervalSince($0) / holdTime) } ?? 0
+                    HStack(spacing: 8) {
+                        Image(systemName: "bolt.fill")
+                        Text("\(skin.cost)").monospacedDigit()
+                        Text("Hold to unlock")
+                    }
+                    .font(.headline)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+                    .background(alignment: .leading) {
+                        GeometryReader { g in
+                            Capsule().fill(Color.white.opacity(0.3)).frame(width: g.size.width * p)
+                        }
+                    }
+                    .clipShape(Capsule())
+                    .glassEffect(.regular, in: .capsule)
+                }
+                .onLongPressGesture(minimumDuration: 10, pressing: { down in
+                    if down { beginHold() } else { cancelHold() }
+                }, perform: {})
+                if !shopNote.isEmpty {
+                    Text(shopNote).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
     // MARK: Flow
 
     private func setup() {
@@ -273,11 +490,22 @@ struct ContentView: View {
         engine.onEnd = { DispatchQueue.main.async { finish() } }
         engine.onDash = { if haptics { UIImpactFeedbackGenerator(style: .rigid).impactOccurred() } }
         engine.pressHandler = { handlePress() }
+        engine.pressBegan = { beginHold() }
+        engine.pressCancel = { cancelHold() }
         engine.onSteer = { value in
             // Start only when the control moves away from the value it had when the menu appeared.
             if phase == .menu && !showSettings && abs(value - engine.steerBaseline) > 0.015 { beginPlay() }
+            if phase == .shop { shopSteer(value) }
         }
         enterMenu()
+        if demoShop && demo {
+            bank = 172
+            ownedRaw = "0,1"
+            equipped = 0
+            selected = 2
+            shopEntered = .distantPast
+            phase = .shop
+        }
         if demoSettings { showSettings = true }
         if demoPaused {
             engine.bot = true
@@ -294,6 +522,13 @@ struct ContentView: View {
         switch phase {
         case .playing: engine.dash()
         case .menu, .paused: break
+        case .shop:
+            guard Date().timeIntervalSince(shopEntered) > 0.6 else { return }
+            if owned(selected) {
+                if equipped != selected { equip(selected) }
+            } else {
+                cancelHold()
+            }
         case .over: if Date().timeIntervalSince(endedAt) > 0.8 { retry() }
         }
     }
@@ -305,6 +540,7 @@ struct ContentView: View {
         engine.steerBaseline = engine.rawSteer
         engine.running = false
         engine.holding = true
+        credited = 0
         cam.recenter(engine: engine)
         engine.steerBaseline = 0.5
         withAnimation(.smooth) { phase = .menu }
@@ -317,6 +553,7 @@ struct ContentView: View {
         engine.target = slider
         engine.holding = false
         engine.running = true
+        credited = 0
         cam.recenter(engine: engine)
         withAnimation(.smooth) { phase = .playing }
         startCamera()
@@ -333,6 +570,7 @@ struct ContentView: View {
 
     private func pauseGame() {
         guard phase == .playing else { return }
+        bankSync()
         engine.paused = true
         withAnimation(.smooth) { phase = .paused }
     }
@@ -364,6 +602,7 @@ struct ContentView: View {
 
     private func finish() {
         guard phase == .playing else { return }
+        bankSync()
         lastScore = Int(engine.score)
         if lastScore > best {
             best = lastScore
