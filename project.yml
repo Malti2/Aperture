@@ -1,0 +1,24 @@
+name: CameraControlTest
+options:
+  bundleIdPrefix: de.malte
+  deploymentTarget:
+    iOS: "18.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+targets:
+  CameraControlTest:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.malte.cameracontroltest
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: "Camera Control Test"
+        INFOPLIST_KEY_NSCameraUsageDescription: "Runs the camera without recording so the test can check whether Camera Control button events arrive. Nothing is saved or sent."
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
