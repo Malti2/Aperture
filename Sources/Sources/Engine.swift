@@ -17,6 +17,7 @@ final class Engine {
     private(set) var trail: [CGFloat] = []
     var running = false
     var holding = false
+    var paused = false
     var onSteer: ((CGFloat) -> Void)?
     var steerBaseline: CGFloat = 0.5
     var rawSteer: CGFloat = 0.5
@@ -84,6 +85,7 @@ final class Engine {
     func step(_ now: Date, _ newSize: CGSize) {
         size = newSize
         guard size.width > 0, size.height > 0 else { return }
+        if paused { last = now; return }
         let dt = min(max(now.timeIntervalSince(last ?? now), 0), 1.0 / 20.0)
         last = now
         let base: CGFloat = running ? (250 + CGFloat(min(score * 0.25, 260))) * levelScale : 90
