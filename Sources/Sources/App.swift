@@ -203,10 +203,9 @@ struct ContentView: View {
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
-                Text("Or drag on the screen. Camera on, not recorded.")
-                    .font(.caption2)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.tertiary)
+                Text("Camera on, not recorded")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .padding(28)
             .frame(maxWidth: 320)
@@ -219,7 +218,7 @@ struct ContentView: View {
                     .phaseAnimator([0.0, 10.0]) { view, dx in
                         view.offset(x: dx)
                     } animation: { _ in .easeInOut(duration: 0.6) }
-                    .position(x: geo.size.width - 40, y: geo.size.height * 0.62)
+                    .position(x: geo.size.width - 40, y: geo.size.height * 0.78)
             }
             .allowsHitTesting(false)
         }
@@ -391,17 +390,19 @@ struct SwipeToContinue: View {
         GeometryReader { geo in
             let maxX = max(geo.size.width - knob - 8, 1)
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.clear)
+                Capsule().fill(Color.white.opacity(0.06))
                     .glassEffect(.regular, in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.22), lineWidth: 1))
                 Text("swipe to continue")
                     .font(.headline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.75))
                     .frame(maxWidth: .infinity)
+                    .padding(.leading, knob * 0.6)
                     .opacity(1 - Double(offset / maxX))
-                Circle().fill(Color.clear)
+                Circle().fill(Color.white.opacity(0.92))
                     .frame(width: knob, height: knob)
-                    .glassEffect(.regular, in: Circle())
-                    .overlay(Image(systemName: "chevron.right").font(.title2.weight(.bold)))
+                    .glassEffect(.regular.interactive(), in: Circle())
+                    .overlay(Image(systemName: "chevron.right").font(.title2.weight(.bold)).foregroundStyle(.black.opacity(0.8)))
                     .offset(x: 4 + offset)
                     .gesture(
                         DragGesture()
