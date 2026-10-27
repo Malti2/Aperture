@@ -124,7 +124,7 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
         let wanted: [AVCaptureControl]
         switch mode {
         case .steer: wanted = [slider]
-        case .speed: wanted = [speed]
+        case .speed: wanted = [] // Game speed is fixed; no picker.
         case .shop: wanted = [ball]
         case .menu: wanted = [menu]
         case .settings: wanted = [sensitivity, haptics]
