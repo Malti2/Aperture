@@ -48,6 +48,8 @@ struct ContentView: View {
     @State private var shopEntered = Date.distantPast
     @State private var holdStart: Date? = nil
     @State private var holdToken = 0
+    private enum HoldSource { case touch, cameraControl }
+    @State private var holdSource: HoldSource? = nil
     @State private var shopNote = ""
     @Environment(\.scenePhase) private var scenePhase
 
@@ -102,7 +104,8 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, new in
             updateIdleTimer()
-            if new != .active { cancelHold() }
+            // Only Camera Control may continue across its transient inactive overlay.
+            if new == .background || (new != .active && holdSource != .cameraControl) { cancelHold() }
         }
         .onChange(of: showSettings) { _, open in
             if open { noteSettingsInteraction("Settings opened") }
@@ -460,9 +463,10 @@ struct ContentView: View {
 
     private let holdTime = 0.9
 
-    private func beginHold() {
-        guard phase == .shop, Date().timeIntervalSince(shopEntered) > 0.6,
-              !owned(selected), holdStart == nil else { return }
+    private func beginHold(source: HoldSource = .touch) {
+        guard phase == .shop, !showSettings, Date().timeIntervalSince(shopEntered) > 0.6,
+              !owned(selected), holdStart == nil,
+              scenePhase == .active || (source == .cameraControl && scenePhase != .background) else { return }
         let cost = ballSkins[selected].cost
         if bank < cost {
             shopNote = "Need \(cost - bank) more"
@@ -470,6 +474,7 @@ struct ContentView: View {
             return
         }
         shopNote = ""
+        holdSource = source
         holdStart = Date()
         withAnimation(.linear(duration: holdTime)) { holdProgress = 1 }
         holdToken += 1
@@ -477,12 +482,18 @@ struct ContentView: View {
         let item = selected
         if haptics { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
         DispatchQueue.main.asyncAfter(deadline: .now() + holdTime) {
-            guard holdToken == token, holdStart != nil, phase == .shop, selected == item, scenePhase == .active else { return }
+            guard holdToken == token, holdStart != nil else { return }
+            guard phase == .shop, !showSettings, selected == item,
+                  scenePhase == .active || (source == .cameraControl && scenePhase != .background) else {
+                cancelHold()
+                return
+            }
             purchase(item)
         }
     }
 
     private func cancelHold() {
+        holdSource = nil
         holdStart = nil
         holdToken += 1
         if holdProgress != 0 { withAnimation(.easeOut(duration: 0.18)) { holdProgress = 0 } }
@@ -652,7 +663,7 @@ struct ContentView: View {
         engine.pressHandler = { handlePress() }
         engine.onFloor = { DispatchQueue.main.async { bankSync() } }
         engine.onShopPick = { index in DispatchQueue.main.async { if phase == .shop { select(index) } } }
-        engine.pressBegan = { beginHold() }
+        engine.pressBegan = { beginHold(source: .cameraControl) }
         engine.pressCancel = { cancelHold() }
         // Navigation swipes must never start a round.
         engine.onSteer = nil
