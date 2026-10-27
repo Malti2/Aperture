@@ -14,6 +14,12 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
     private let queue = DispatchQueue(label: "aperture.camera")
     private var configured = false
     private var steerSlider: AVCaptureSlider?
+    private var speedPicker: AVCaptureIndexPicker?
+    private weak var gameEngine: Engine?
+
+    /// Which Camera Control entry is shown. Steer while playing and in the shop, Speed everywhere else.
+    enum ControlMode { case steer, speed }
+    private var mode: ControlMode = .speed
 
     override init() {
         super.init()
@@ -61,6 +67,38 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
         }
     }
 
+    /// Shows only the entry that fits the current screen. Controls may be added and removed while the session runs.
+    func setMode(_ newMode: ControlMode) {
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            self.mode = newMode
+            self.applyMode()
+        }
+    }
+
+    /// Runs on the camera queue.
+    private func applyMode() {
+        guard session.supportsControls, let slider = steerSlider, let picker = speedPicker else { return }
+        let hasSlider = session.controls.contains { $0 === slider }
+        let hasPicker = session.controls.contains { $0 === picker }
+        switch mode {
+        case .steer:
+            if hasPicker { session.removeControl(picker) }
+            if !hasSlider {
+                // A fresh slider starts in the middle, so steering stays relative to this moment.
+                gameEngine?.rawSteer = 0.5
+                slider.value = 0.5
+                if session.canAddControl(slider) { session.addControl(slider) }
+            }
+        case .speed:
+            if hasSlider { session.removeControl(slider) }
+            if !hasPicker {
+                picker.selectedIndex = min(max(gameEngine?.level ?? 1, 0), Engine.levelNames.count - 1)
+                if session.canAddControl(picker) { session.addControl(picker) }
+            }
+        }
+    }
+
     func stop() {
         queue.async { [weak self] in
             guard let self = self else { return }
@@ -93,14 +131,14 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
                 }
                 DispatchQueue.main.async { engine.onSteer?(CGFloat(value)) }
             }
-            if session.canAddControl(slider) { session.addControl(slider) }
-            // A second control. A double light press on Camera Control switches between controls.
             let picker = AVCaptureIndexPicker("Speed", symbolName: "speedometer", localizedIndexTitles: Engine.levelNames)
             picker.selectedIndex = 1
             picker.setActionQueue(queue) { index in
                 engine.level = index
             }
-            if session.canAddControl(picker) { session.addControl(picker) }
+            speedPicker = picker
+            gameEngine = engine
+            applyMode()
         }
         session.commitConfiguration()
         let info: String
