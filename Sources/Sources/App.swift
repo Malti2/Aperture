@@ -31,6 +31,12 @@ struct ContentView: View {
     @State private var menuHintToken = 0
     @State private var settingsAwakeUntil = Date.distantPast
     @State private var settingsAwakeToken = 0
+    @State private var lastHardwareActivity = "None"
+    @State private var lastHardwareActivityAt = Date.distantPast
+    @State private var lastSettingsActivity = "None"
+    @State private var lastSettingsActivityAt = Date.distantPast
+    @State private var lastIdleWrite = "Not set"
+    @State private var lastIdleWriteAt = Date.distantPast
     // New key: the old range ended at 4.0, which is now the default and the middle of the slider.
     @AppStorage("steerGainV2") private var steerGain = 4.0
     @AppStorage("haptics") private var haptics = true
@@ -76,11 +82,11 @@ struct ContentView: View {
         .onChange(of: steerGain) { _, v in
             Engine.steerGain = CGFloat(v)
             cam.syncSettings(sensitivity: v, haptics: haptics)
-            if showSettings { noteSettingsInteraction() }
+            if showSettings { noteSettingsInteraction("Touch/state change") }
         }
         .onChange(of: haptics) { _, v in
             cam.syncSettings(sensitivity: steerGain, haptics: v)
-            if showSettings { noteSettingsInteraction() }
+            if showSettings { noteSettingsInteraction("Touch/state change") }
         }
         .onChange(of: phase) { _, new in
             updateIdleTimer()
@@ -89,7 +95,7 @@ struct ContentView: View {
             else { hideMenuHint() }
         }
         .onChange(of: cam.overlayCount) { _, _ in
-            if showSettings { noteSettingsInteraction() }
+            if showSettings { noteSettingsInteraction("Camera Control activated") }
             else if phase == .menu { showMenuHint() }
         }
         .onChange(of: menuSelection) { _, index in
@@ -102,7 +108,7 @@ struct ContentView: View {
             if new == .background { clearSettingsAwake() }
         }
         .onChange(of: showSettings) { _, open in
-            if open { noteSettingsInteraction() }
+            if open { noteSettingsInteraction("Settings opened") }
             else { clearSettingsAwake() }
             updateIdleTimer()
         }
@@ -319,6 +325,24 @@ struct ContentView: View {
                     }
                     Toggle("Haptics", isOn: $haptics)
                 }
+                Section("Display check (temporary)") {
+                    TimelineView(.periodic(from: .now, by: 1)) { tick in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"))")
+                            Text("Scene: \(String(describing: scenePhase))")
+                            Text("Keep awake now: \(UIApplication.shared.isIdleTimerDisabled ? "ON" : "OFF")")
+                            Text("Settings lease: \(max(0, Int(settingsAwakeUntil.timeIntervalSince(tick.date).rounded(.up))))s")
+                            Text("Last input: \(lastSettingsActivity) \(activityAge(lastSettingsActivityAt, now: tick.date))")
+                            Text("Hardware: \(lastHardwareActivity) \(activityAge(lastHardwareActivityAt, now: tick.date))")
+                            Text("Last write: \(lastIdleWrite) \(activityAge(lastIdleWriteAt, now: tick.date))")
+                            Text("Camera: \(cam.running ? "running" : "stopped")")
+                        }
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                    }
+                    Text("If the display goes dark, note these values just before it happens. Nothing is sent or saved.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -328,7 +352,7 @@ struct ContentView: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
         .preferredColorScheme(.dark)
     }
 
@@ -359,6 +383,12 @@ struct ContentView: View {
         let roundNeedsDisplay = phase == .playing && !showSettings
         let settingsInUse = showSettings && settingsAwakeUntil > Date()
         UIApplication.shared.isIdleTimerDisabled = scenePhase != .background && (roundNeedsDisplay || settingsInUse)
+        lastIdleWrite = "\(UIApplication.shared.isIdleTimerDisabled ? "ON" : "OFF") / \(showSettings ? "settings" : String(describing: phase)) / \(String(describing: scenePhase))"
+        lastIdleWriteAt = Date()
+    }
+
+    private func activityAge(_ date: Date, now: Date) -> String {
+        date == .distantPast ? "" : "(\(max(0, Int(now.timeIntervalSince(date))))s ago)"
     }
 
     private func clearSettingsAwake() {
@@ -367,8 +397,14 @@ struct ContentView: View {
         updateIdleTimer()
     }
 
-    private func noteSettingsInteraction() {
+    private func noteSettingsInteraction(_ source: String) {
         guard showSettings, scenePhase != .background else { return }
+        lastSettingsActivity = source
+        lastSettingsActivityAt = Date()
+        if source.hasPrefix("Camera Control") {
+            lastHardwareActivity = source
+            lastHardwareActivityAt = Date()
+        }
         settingsAwakeToken += 1
         let token = settingsAwakeToken
         settingsAwakeUntil = Date().addingTimeInterval(60)
@@ -646,12 +682,12 @@ struct ContentView: View {
         }
         cam.onSensitivity = { value in
             guard showSettings else { return }
-            noteSettingsInteraction()
+            noteSettingsInteraction("Camera Control Speed")
             steerGain = min(max((value * 10).rounded() / 10, 1), 7)
         }
         cam.onHaptics = { value in
             guard showSettings else { return }
-            noteSettingsInteraction()
+            noteSettingsInteraction("Camera Control Haptics")
             haptics = value
         }
         cam.syncSettings(sensitivity: steerGain, haptics: haptics)
