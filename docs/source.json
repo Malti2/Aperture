@@ -20,6 +20,14 @@
       "category": "games",
       "versions": [
         {
+          "version": "1.2.3",
+          "date": "2026-10-27",
+          "localizedDescription": "Unsigned IPA. Sign and install it yourself.",
+          "downloadURL": "https://github.com/Malti2/Aperture/releases/download/v1.2.3/Aperture.ipa",
+          "size": 199219,
+          "minOSVersion": "26.0"
+        },
+        {
           "version": "1.2.2",
           "date": "2026-10-27",
           "localizedDescription": "Unsigned IPA. Sign and install it yourself.",
