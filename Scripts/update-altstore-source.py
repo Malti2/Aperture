@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds docs/source.json from the published GitHub releases and writes docs/icon.png."""
+"""Builds docs/source.json from the published GitHub releases."""
 import json, math, os, struct, urllib.request, zlib
 
 REPO = os.environ.get("GITHUB_REPOSITORY", "Malti2/Aperture")
@@ -72,11 +72,14 @@ def icon_png(size=256):
 
 def main():
     os.makedirs("docs", exist_ok=True)
+    vers = versions()
+    # Cache-buster so AltStore re-downloads the icon after it changes.
+    icon_url = PAGES + "/icon.png?v=" + (vers[0]["version"] if vers else "1")
     source = {
         "name": "Aperture",
         "subtitle": "Arcade game steered with Camera Control",
         "description": "AltStore source for Aperture, an arcade game for iPhone steered with Camera Control.",
-        "iconURL": PAGES + "/icon.png",
+        "iconURL": icon_url,
         "website": "https://github.com/" + REPO,
         "tintColor": TINT,
         "featuredApps": [BUNDLE_ID],
@@ -86,10 +89,10 @@ def main():
             "developerName": "Malte",
             "subtitle": "Steer with Camera Control.",
             "localizedDescription": "An arcade game for iPhone that you steer with the Camera Control button. Needs an iPhone with Camera Control. The camera runs only so the button works. Nothing is recorded, stored or sent.",
-            "iconURL": PAGES + "/icon.png",
+            "iconURL": icon_url,
             "tintColor": TINT,
             "category": "games",
-            "versions": versions(),
+            "versions": vers,
             "appPermissions": {
                 "entitlements": [],
                 "privacy": {"NSCameraUsageDescription": CAMERA_TEXT},
