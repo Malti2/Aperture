@@ -275,7 +275,7 @@ struct ContentView: View {
                     }
                     .buttonStyle(.glass)
                 }
-                Text("Camera on, not recorded")
+                Text(cam.cameraStopped ? "Camera stopped" : "Camera on, not recorded")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -711,6 +711,10 @@ struct ContentView: View {
             }
         }
         cam.setMode(mode, shopIndex: selected)
+        // Every screen change also checks the session (never refills the restart budget).
+        if !demo && phase != .over && scenePhase != .background && cam.authorization == .authorized {
+            cam.start(engine: engine, resetBudget: false)
+        }
     }
 
     private func enterMenu() {
