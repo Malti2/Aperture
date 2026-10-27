@@ -11,7 +11,7 @@ A small arcade game for iPhone that you steer with Camera Control. Swipe the con
 
 ## Privacy
 
-The camera runs only so iOS delivers Camera Control events to the app. Aperture does not process, save or send camera frames. It stores only your best score and settings on the device.
+The camera runs only so iOS delivers Camera Control events to the app. Aperture does not process, save or send camera frames. It stores only your best score, settings and shop progress on the device.
 
 ## Platforms
 
@@ -23,7 +23,15 @@ Builds are unsigned and meant for personal testing. Installing one needs a sidel
 
 ## Download
 
-No public release yet. `Aperture.ipa` will be attached to a release once one is published.
+Get `Aperture.ipa` from the [latest release](https://github.com/Malti2/Aperture/releases/latest).
+
+## AltStore source
+
+1. Open AltStore and go to **Sources**.
+2. Tap **+** and enter `https://malti2.github.io/Aperture/source.json`.
+3. Open the Aperture listing and install it.
+
+You can also use the [Add to AltStore](https://altdirect.app/?url=https%3A%2F%2Fmalti2.github.io%2FAperture%2Fsource.json) link. The source is generated from published GitHub releases. It lists each release's `Aperture.ipa`, version, date, file size and release notes.
 
 ## Build from source
 
