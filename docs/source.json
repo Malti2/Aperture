@@ -27,7 +27,13 @@
           "size": 182193,
           "minOSVersion": "26.0"
         }
-      ]
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {
+          "NSCameraUsageDescription": "Aperture keeps the camera running without recording so the Camera Control button works as a game controller. Nothing is saved or sent."
+        }
+      }
     }
   ],
   "news": []
