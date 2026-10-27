@@ -29,12 +29,6 @@ struct ContentView: View {
     @State private var menuSelection = 0
     @State private var menuHintVisible = false
     @State private var menuHintToken = 0
-    @State private var lastHardwareActivity = "None"
-    @State private var lastHardwareActivityAt = Date.distantPast
-    @State private var lastSettingsActivity = "None"
-    @State private var lastSettingsActivityAt = Date.distantPast
-    @State private var lastIdleWrite = "Not set"
-    @State private var lastIdleWriteAt = Date.distantPast
     // New key: the old range ended at 4.0, which is now the default and the middle of the slider.
     @AppStorage("steerGainV2") private var steerGain = 4.0
     @AppStorage("haptics") private var haptics = true
@@ -82,11 +76,11 @@ struct ContentView: View {
         .onChange(of: steerGain) { _, v in
             Engine.steerGain = CGFloat(v)
             cam.syncSettings(sensitivity: v, haptics: haptics)
-            if showSettings { noteSettingsInteraction("Touch/state change") }
+            if showSettings { noteSettingsInteraction() }
         }
         .onChange(of: haptics) { _, v in
             cam.syncSettings(sensitivity: steerGain, haptics: v)
-            if showSettings { noteSettingsInteraction("Touch/state change") }
+            if showSettings { noteSettingsInteraction() }
         }
         .onChange(of: phase) { _, new in
             updateIdleTimer()
@@ -95,7 +89,7 @@ struct ContentView: View {
             else { hideMenuHint() }
         }
         .onChange(of: cam.overlayCount) { _, _ in
-            if showSettings { noteSettingsInteraction("Camera Control activated") }
+            if showSettings { noteSettingsInteraction() }
             else if phase == .menu { showMenuHint() }
         }
         .onChange(of: menuSelection) { _, index in
@@ -108,7 +102,7 @@ struct ContentView: View {
             if new == .background || (new != .active && holdSource != .cameraControl) { cancelHold() }
         }
         .onChange(of: showSettings) { _, open in
-            if open { noteSettingsInteraction("Settings opened") }
+            if open { noteSettingsInteraction() }
             updateIdleTimer()
         }
         .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
@@ -324,24 +318,7 @@ struct ContentView: View {
                     }
                     Toggle("Haptics", isOn: $haptics)
                 }
-                Section("Display check (temporary)") {
-                    TimelineView(.periodic(from: .now, by: 1)) { tick in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"))")
-                            Text("Scene: \(String(describing: scenePhase))")
-                            Text("Keep awake now: \(UIApplication.shared.isIdleTimerDisabled ? "ON" : "OFF")")
-                            Text("Policy: awake throughout foreground")
-                            Text("Last input: \(lastSettingsActivity) \(activityAge(lastSettingsActivityAt, now: tick.date))")
-                            Text("Hardware: \(lastHardwareActivity) \(activityAge(lastHardwareActivityAt, now: tick.date))")
-                            Text("Last write: \(lastIdleWrite) \(activityAge(lastIdleWriteAt, now: tick.date))")
-                            Text("Camera: \(cam.running ? "running" : "stopped")")
-                        }
-                        .font(.caption.monospaced())
-                        .textSelection(.enabled)
-                    }
-                    Text("If the display goes dark, note these values just before it happens. Nothing is sent or saved.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -380,22 +357,10 @@ struct ContentView: View {
     /// Camera Control can briefly make the scene inactive; only background releases it.
     private func updateIdleTimer() {
         UIApplication.shared.isIdleTimerDisabled = scenePhase != .background
-        lastIdleWrite = "\(UIApplication.shared.isIdleTimerDisabled ? "ON" : "OFF") / \(showSettings ? "settings" : String(describing: phase)) / \(String(describing: scenePhase))"
-        lastIdleWriteAt = Date()
     }
 
-    private func activityAge(_ date: Date, now: Date) -> String {
-        date == .distantPast ? "" : "(\(max(0, Int(now.timeIntervalSince(date))))s ago)"
-    }
-
-    private func noteSettingsInteraction(_ source: String) {
+    private func noteSettingsInteraction() {
         guard showSettings, scenePhase != .background else { return }
-        lastSettingsActivity = source
-        lastSettingsActivityAt = Date()
-        if source.hasPrefix("Camera Control") {
-            lastHardwareActivity = source
-            lastHardwareActivityAt = Date()
-        }
         updateIdleTimer()
     }
 
@@ -673,12 +638,12 @@ struct ContentView: View {
         }
         cam.onSensitivity = { value in
             guard showSettings else { return }
-            noteSettingsInteraction("Camera Control Speed")
+            noteSettingsInteraction()
             steerGain = min(max((value * 10).rounded() / 10, 1), 7)
         }
         cam.onHaptics = { value in
             guard showSettings else { return }
-            noteSettingsInteraction("Camera Control Haptics")
+            noteSettingsInteraction()
             haptics = value
         }
         cam.syncSettings(sensitivity: steerGain, haptics: haptics)
