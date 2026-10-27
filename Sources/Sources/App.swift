@@ -34,8 +34,8 @@ struct ContentView: View {
     @AppStorage("equipped") private var equipped = 0
     @State private var credited = 0
     @State private var selected = 0
-    @State private var shopAccum: CGFloat = 0
-    @State private var shopLast: CGFloat = 0.5
+    @State private var dragY: CGFloat = 0
+    @State private var holdProgress: CGFloat = 0
     @State private var shopEntered = Date.distantPast
     @State private var holdStart: Date? = nil
     @State private var holdToken = 0
@@ -69,7 +69,7 @@ struct ContentView: View {
         .onChange(of: steerGain) { _, v in Engine.steerGain = CGFloat(v) }
         .onChange(of: phase) { _, new in
             updateIdleTimer()
-            cam.setMode(new == .playing || new == .shop ? .steer : .speed)
+            cam.setMode(new == .playing ? .steer : (new == .shop ? .shop : .speed), shopIndex: selected)
         }
         .onChange(of: scenePhase) { _, new in
             updateIdleTimer()
@@ -349,8 +349,7 @@ struct ContentView: View {
     private func enterShop() {
         guard phase == .menu, !showSettings else { return }
         cam.recenter(engine: engine)
-        shopLast = 0.5
-        shopAccum = 0
+        dragY = 0
         selected = min(max(equipped, 0), ballSkins.count - 1)
         shopEntered = Date()
         shopNote = ""
@@ -364,22 +363,14 @@ struct ContentView: View {
         withAnimation(.smooth) { phase = .menu }
     }
 
-    /// Browsing. One step per detent of swipe distance. Prototype threshold.
-    private func shopSteer(_ value: CGFloat) {
-        let threshold: CGFloat = 0.05
-        shopAccum += value - shopLast
-        shopLast = value
-        while shopAccum >= threshold { shopAccum -= threshold; moveSelection(1) }
-        while shopAccum <= -threshold { shopAccum += threshold; moveSelection(-1) }
-    }
-
-    private func moveSelection(_ d: Int) {
-        let n = selected + d
-        guard n >= 0, n < ballSkins.count else { return }
-        cancelHold()
-        shopNote = ""
-        withAnimation(.smooth) { selected = n }
-        if haptics { UISelectionFeedbackGenerator().selectionChanged() }
+    /// Moves to a ball. One animation driver: the selected index and the drag offset settle together,
+    /// and a new target simply retargets the running animation.
+    private func select(_ i: Int) {
+        let n = min(max(i, 0), ballSkins.count - 1)
+        withAnimation(.smooth(duration: 0.38)) {
+            selected = n
+            dragY = 0
+        }
     }
 
     private func equip(_ i: Int) {
@@ -400,6 +391,7 @@ struct ContentView: View {
         }
         shopNote = ""
         holdStart = Date()
+        withAnimation(.linear(duration: holdTime)) { holdProgress = 1 }
         holdToken += 1
         let token = holdToken
         let item = selected
@@ -413,6 +405,7 @@ struct ContentView: View {
     private func cancelHold() {
         holdStart = nil
         holdToken += 1
+        if holdProgress != 0 { withAnimation(.easeOut(duration: 0.18)) { holdProgress = 0 } }
     }
 
     private func purchase(_ i: Int) {
@@ -425,33 +418,100 @@ struct ContentView: View {
         if haptics { UINotificationFeedbackGenerator().notificationOccurred(.success) }
     }
 
+    private let ballSpacing: CGFloat = 240
+    private let ballBig: CGFloat = 170
+
+    /// The ball nearest to the centre while dragging. Equals `selected` at rest.
+    private var focus: Int {
+        let steps = Int((-dragY / ballSpacing).rounded())
+        return min(max(selected + steps, 0), ballSkins.count - 1)
+    }
+
+    /// Resists dragging past the first and last ball.
+    private func band(_ t: CGFloat) -> CGFloat {
+        let up = -CGFloat(ballSkins.count - 1 - selected) * ballSpacing
+        let down = CGFloat(selected) * ballSpacing
+        if t < up { return up + (t - up) * 0.3 }
+        if t > down { return down + (t - down) * 0.3 }
+        return t
+    }
+
+    private var shopDrag: some Gesture {
+        DragGesture(minimumDistance: 6)
+            .onChanged { v in
+                if holdStart != nil { cancelHold() }
+                dragY = band(v.translation.height)
+            }
+            .onEnded { v in
+                let t = v.translation.height * 0.5 + v.predictedEndTranslation.height * 0.5
+                select(selected + Int((-t / ballSpacing).rounded()))
+            }
+    }
+
     private var shopView: some View {
         ZStack {
             Color.black.opacity(0.3)
             GeometryReader { geo in
-                ForEach(-1...1, id: \.self) { o in
-                    let i = selected + o
-                    if i >= 0 && i < ballSkins.count {
-                        let big = o == 0
-                        let size: CGFloat = big ? 210 : 90
-                        Circle()
-                            .fill(ballSkins[i].color)
-                            .opacity(big ? (owned(i) ? 1 : 0.8) : 0.4)
-                            .shadow(color: ballSkins[i].color.opacity(big ? 0.5 : 0), radius: 40)
-                            .frame(width: size, height: size)
-                            .position(x: geo.size.width * 0.4, y: geo.size.height * 0.42 + CGFloat(o) * 165)
-                            .onTapGesture { if !big { moveSelection(o) } }
+                let cx = geo.size.width / 2
+                let cy = geo.size.height * 0.34
+                GlassEffectContainer(spacing: 24) {
+                    ZStack {
+                        ForEach(0..<ballSkins.count, id: \.self) { i in
+                            let pos = CGFloat(i - selected) * ballSpacing + dragY
+                            let d = abs(pos) / ballSpacing
+                            let scale = 1 - 0.58 * min(d, 1)
+                            let alpha = max(0, 1 - 0.62 * min(d, 1) - 0.4 * max(0, d - 1))
+                            Circle()
+                                .fill(.clear)
+                                .frame(width: ballBig, height: ballBig)
+                                .glassEffect(.regular.tint(ballSkins[i].color.opacity(owned(i) ? 0.9 : 0.55)).interactive(), in: .circle)
+                                .scaleEffect(scale)
+                                .opacity(alpha)
+                                .offset(y: pos)
+                                .onTapGesture { if i != selected { select(i) } }
+                        }
                     }
+                    .frame(width: geo.size.width, height: 0)
+                    .position(x: cx, y: cy)
                 }
+                Circle()
+                    .trim(from: 0, to: holdProgress)
+                    .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: ballBig + 26, height: ballBig + 26)
+                    .position(x: cx, y: cy)
+                    .allowsHitTesting(false)
+                VStack(spacing: 6) {
+                    Text(ballSkins[focus].name)
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .id(focus)
+                        .transition(.opacity)
+                    HStack(spacing: 6) {
+                        if owned(focus) {
+                            Text(equipped == focus ? "Equipped" : "Owned")
+                        } else {
+                            Image(systemName: "bolt.fill")
+                            Text("\(ballSkins[focus].cost)").monospacedDigit()
+                        }
+                    }
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                }
+                .animation(.smooth(duration: 0.25), value: focus)
+                .position(x: cx, y: cy + ballBig / 2 + 62)
+                .allowsHitTesting(false)
                 VStack(spacing: 8) {
                     ForEach(0..<ballSkins.count, id: \.self) { i in
                         Capsule()
-                            .fill(Color.white.opacity(i == selected ? 0.95 : 0.22))
-                            .frame(width: 6, height: i == selected ? 18 : 6)
+                            .fill(Color.white.opacity(i == focus ? 0.95 : 0.22))
+                            .frame(width: 6, height: i == focus ? 18 : 6)
                     }
                 }
-                .position(x: geo.size.width - 34, y: geo.size.height * 0.42)
+                .animation(.smooth(duration: 0.25), value: focus)
+                .position(x: geo.size.width - 34, y: cy)
             }
+            .contentShape(Rectangle())
+            .gesture(shopDrag)
             VStack {
                 Spacer()
                 HStack(alignment: .bottom) {
@@ -465,37 +525,34 @@ struct ContentView: View {
                 .padding(.bottom, 54)
             }
         }
+        .onChange(of: focus) { _, _ in
+            if haptics { UISelectionFeedbackGenerator().selectionChanged() }
+        }
+        .onChange(of: selected) { _, new in
+            cancelHold()
+            shopNote = ""
+            cam.syncShop(index: new)
+        }
     }
 
     private var shopAction: some View {
-        let skin = ballSkins[min(max(selected, 0), ballSkins.count - 1)]
         let isOwned = owned(selected)
         return VStack(alignment: .leading, spacing: 10) {
-            Text(skin.name).font(.system(size: 34, weight: .bold, design: .rounded))
             if isOwned {
                 Text(equipped == selected ? "Equipped" : "Click to equip")
                     .font(.headline)
                     .foregroundStyle(.secondary)
                     .onTapGesture { if equipped != selected { equip(selected) } }
             } else {
-                TimelineView(.animation) { tl in
-                    let p = holdStart.map { min(1, tl.date.timeIntervalSince($0) / holdTime) } ?? 0
-                    HStack(spacing: 8) {
-                        Image(systemName: "bolt.fill")
-                        Text("\(skin.cost)").monospacedDigit()
-                        Text("Hold to unlock")
-                    }
-                    .font(.headline)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 12)
-                    .background(alignment: .leading) {
-                        GeometryReader { g in
-                            Capsule().fill(Color.white.opacity(0.3)).frame(width: g.size.width * p)
-                        }
-                    }
-                    .clipShape(Capsule())
-                    .glassEffect(.regular, in: .capsule)
+                HStack(spacing: 8) {
+                    Image(systemName: "bolt.fill")
+                    Text("\(ballSkins[selected].cost)").monospacedDigit()
+                    Text("Hold to unlock")
                 }
+                .font(.headline)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
+                .glassEffect(.regular, in: .capsule)
                 .onLongPressGesture(minimumDuration: 10, pressing: { down in
                     if down { beginHold() } else { cancelHold() }
                 }, perform: {})
@@ -514,12 +571,12 @@ struct ContentView: View {
         engine.onDash = { if haptics { UIImpactFeedbackGenerator(style: .rigid).impactOccurred() } }
         engine.pressHandler = { handlePress() }
         engine.onFloor = { DispatchQueue.main.async { bankSync() } }
+        engine.onShopPick = { index in DispatchQueue.main.async { if phase == .shop { select(index) } } }
         engine.pressBegan = { beginHold() }
         engine.pressCancel = { cancelHold() }
         engine.onSteer = { value in
             // Start only when the control moves away from the value it had when the menu appeared.
             if phase == .menu && !showSettings && abs(value - engine.steerBaseline) > 0.015 { beginPlay() }
-            if phase == .shop { shopSteer(value) }
         }
         enterMenu()
         if demoShop && demo {
@@ -529,6 +586,7 @@ struct ContentView: View {
             selected = 2
             shopEntered = .distantPast
             phase = .shop
+            if CommandLine.arguments.contains("-cycle") { bank = 900; runShopDemo() }
         }
         if demoSettings { showSettings = true }
         if demoPaused {
@@ -540,6 +598,15 @@ struct ContentView: View {
             engine.bot = true
             beginPlay()
         }
+    }
+
+    /// Simulator-only motion test: slow steps, fast steps, a drag-like jump, then a hold.
+    private func runShopDemo() {
+        let steps: [(Double, Int)] = [(2.0, 3), (3.0, 4), (3.9, 5), (4.1, 4), (4.3, 3), (4.5, 2), (4.7, 1), (4.9, 0), (6.0, 5), (7.5, 2)]
+        for (t, i) in steps { DispatchQueue.main.asyncAfter(deadline: .now() + t) { select(i) } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8.5) { beginHold() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 9.0) { cancelHold() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { beginHold() }
     }
 
     private func handlePress() {
