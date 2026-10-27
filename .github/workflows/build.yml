@@ -27,8 +27,6 @@ jobs:
           retention-days: 1
   screenshot:
     runs-on: macos-26
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Generate project
@@ -75,18 +73,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: simulator-screenshots
-          path: screenshot-*.png
+          path: |
+            screenshot-*.png
+            shop-motion.mp4
           retention-days: 1
-      - name: Publish simulator previews to docs/preview
-        run: |
-          mkdir -p docs/preview
-          cp screenshot-*.png shop-motion.mp4 docs/preview/ || true
-          git config user.name "github-actions"
-          git config user.email "github-actions@users.noreply.github.com"
-          git add docs/preview
-          git commit -m "Update simulator preview [skip ci]" || exit 0
-          git pull --rebase origin main
-          git push origin HEAD:main
   release:
     needs: [ipa, screenshot]
     runs-on: ubuntu-latest
