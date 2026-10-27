@@ -1,3 +1,5 @@
+<p align="center"><img src="Sources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png" width="160" alt="Aperture icon"></p>
+
 # Aperture
 
 A small arcade game for iPhone that you steer with Camera Control. Swipe the control to move through the gaps in the walls. Touch works too.
