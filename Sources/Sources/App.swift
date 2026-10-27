@@ -29,8 +29,6 @@ struct ContentView: View {
     @State private var menuSelection = 0
     @State private var menuHintVisible = false
     @State private var menuHintToken = 0
-    @State private var settingsAwakeUntil = Date.distantPast
-    @State private var settingsAwakeToken = 0
     @State private var lastHardwareActivity = "None"
     @State private var lastHardwareActivityAt = Date.distantPast
     @State private var lastSettingsActivity = "None"
@@ -105,11 +103,9 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, new in
             updateIdleTimer()
             if new != .active { cancelHold() }
-            if new == .background { clearSettingsAwake() }
         }
         .onChange(of: showSettings) { _, open in
             if open { noteSettingsInteraction("Settings opened") }
-            else { clearSettingsAwake() }
             updateIdleTimer()
         }
         .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
@@ -331,7 +327,7 @@ struct ContentView: View {
                             Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"))")
                             Text("Scene: \(String(describing: scenePhase))")
                             Text("Keep awake now: \(UIApplication.shared.isIdleTimerDisabled ? "ON" : "OFF")")
-                            Text("Settings lease: \(max(0, Int(settingsAwakeUntil.timeIntervalSince(tick.date).rounded(.up))))s")
+                            Text("Policy: awake throughout foreground")
                             Text("Last input: \(lastSettingsActivity) \(activityAge(lastSettingsActivityAt, now: tick.date))")
                             Text("Hardware: \(lastHardwareActivity) \(activityAge(lastHardwareActivityAt, now: tick.date))")
                             Text("Last write: \(lastIdleWrite) \(activityAge(lastIdleWriteAt, now: tick.date))")
@@ -377,24 +373,16 @@ struct ContentView: View {
 
     // MARK: Bank and shop
 
-    /// Camera Control overlays may briefly make the scene inactive. Only actual background
-    /// entry releases a needed assertion. Settings renews a bounded lease on real interaction.
+    /// Keep every app screen awake, including menus, Shop and Settings.
+    /// Camera Control can briefly make the scene inactive; only background releases it.
     private func updateIdleTimer() {
-        let roundNeedsDisplay = phase == .playing && !showSettings
-        let settingsInUse = showSettings && settingsAwakeUntil > Date()
-        UIApplication.shared.isIdleTimerDisabled = scenePhase != .background && (roundNeedsDisplay || settingsInUse)
+        UIApplication.shared.isIdleTimerDisabled = scenePhase != .background
         lastIdleWrite = "\(UIApplication.shared.isIdleTimerDisabled ? "ON" : "OFF") / \(showSettings ? "settings" : String(describing: phase)) / \(String(describing: scenePhase))"
         lastIdleWriteAt = Date()
     }
 
     private func activityAge(_ date: Date, now: Date) -> String {
         date == .distantPast ? "" : "(\(max(0, Int(now.timeIntervalSince(date))))s ago)"
-    }
-
-    private func clearSettingsAwake() {
-        settingsAwakeToken += 1
-        settingsAwakeUntil = .distantPast
-        updateIdleTimer()
     }
 
     private func noteSettingsInteraction(_ source: String) {
@@ -405,15 +393,7 @@ struct ContentView: View {
             lastHardwareActivity = source
             lastHardwareActivityAt = Date()
         }
-        settingsAwakeToken += 1
-        let token = settingsAwakeToken
-        settingsAwakeUntil = Date().addingTimeInterval(60)
         updateIdleTimer()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
-            guard settingsAwakeToken == token else { return }
-            settingsAwakeUntil = .distantPast
-            updateIdleTimer()
-        }
     }
 
     private func hideMenuHint() {
