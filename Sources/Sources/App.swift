@@ -26,7 +26,8 @@ struct ContentView: View {
     @State private var lastScore = 0
     @State private var endedAt = Date.distantPast
     @State private var showSettings = false
-    @AppStorage("steerGain") private var steerGain = 1.6
+    // New key: the old range ended at 4.0, which is now the default and the middle of the slider.
+    @AppStorage("steerGainV2") private var steerGain = 4.0
     @AppStorage("haptics") private var haptics = true
     @AppStorage("bank") private var bank = 0
     @AppStorage("owned") private var ownedRaw = "0"
@@ -281,7 +282,13 @@ struct ContentView: View {
                 Section {
                     VStack(alignment: .leading) {
                         Text("Steering speed")
-                        Slider(value: $steerGain, in: 1.0...4.0, step: 0.1)
+                        Slider(value: $steerGain, in: 1.0...7.0, step: 0.1) {
+                            Text("Steering speed")
+                        } minimumValueLabel: {
+                            Text("Slower")
+                        } maximumValueLabel: {
+                            Text("Faster")
+                        }
                     }
                     Toggle("Haptics", isOn: $haptics)
                 }
