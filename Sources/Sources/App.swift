@@ -27,6 +27,10 @@ struct ContentView: View {
     @State private var endedAt = Date.distantPast
     @State private var showSettings = false
     @State private var menuSelection = 0
+    @State private var menuHintVisible = false
+    @State private var menuHintToken = 0
+    @State private var settingsAwakeUntil = Date.distantPast
+    @State private var settingsAwakeToken = 0
     // New key: the old range ended at 4.0, which is now the default and the middle of the slider.
     @AppStorage("steerGainV2") private var steerGain = 4.0
     @AppStorage("haptics") private var haptics = true
@@ -72,22 +76,42 @@ struct ContentView: View {
         .onChange(of: steerGain) { _, v in
             Engine.steerGain = CGFloat(v)
             cam.syncSettings(sensitivity: v, haptics: haptics)
+            if showSettings { noteSettingsInteraction() }
         }
-        .onChange(of: haptics) { _, v in cam.syncSettings(sensitivity: steerGain, haptics: v) }
-        .onChange(of: phase) { _, _ in
+        .onChange(of: haptics) { _, v in
+            cam.syncSettings(sensitivity: steerGain, haptics: v)
+            if showSettings { noteSettingsInteraction() }
+        }
+        .onChange(of: phase) { _, new in
             updateIdleTimer()
             updateCameraControls()
+            if new == .menu { showMenuHint() }
+            else { hideMenuHint() }
+        }
+        .onChange(of: cam.overlayCount) { _, _ in
+            if showSettings { noteSettingsInteraction() }
+            else if phase == .menu { showMenuHint() }
+        }
+        .onChange(of: menuSelection) { _, index in
+            cam.syncMenu(index: index)
+            showMenuHint()
         }
         .onChange(of: scenePhase) { _, new in
             updateIdleTimer()
             if new != .active { cancelHold() }
+            if new == .background { clearSettingsAwake() }
         }
-        .onChange(of: showSettings) { _, _ in updateIdleTimer() }
+        .onChange(of: showSettings) { _, open in
+            if open { noteSettingsInteraction() }
+            else { clearSettingsAwake() }
+            updateIdleTimer()
+        }
         .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
             if phase == .playing && !engine.paused { bankSync() }
         }
         .onChange(of: showSettings) { _, _ in
             cancelHold()
+            if showSettings { hideMenuHint() } else { showMenuHint() }
             updateCameraControls()
             if scenePhase == .active { startCamera() }
         }
@@ -240,15 +264,6 @@ struct ContentView: View {
             VStack(spacing: 16) {
                 Text("Aperture")
                     .font(.system(size: 44, weight: .bold, design: .rounded))
-                Text("Click to \(menuSelection == 0 ? "play" : "open " + ["Play", "Shop", "Settings"][menuSelection])")
-                    .font(.headline)
-                Picker("Main Menu", selection: $menuSelection) {
-                    Text("Play").tag(0)
-                    Text("Shop").tag(1)
-                    Text("Settings").tag(2)
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: menuSelection) { _, index in cam.syncMenu(index: index) }
                 if best > 0 {
                     Text("Best \(best)").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
                 }
@@ -274,14 +289,15 @@ struct ContentView: View {
             .frame(maxWidth: 320)
             .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 34, style: .continuous))
             GeometryReader { geo in
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 30, weight: .bold))
-                    .padding(14)
-                    .glassEffect(.regular, in: Circle())
-                    .phaseAnimator([0.0, 10.0]) { view, dx in
-                        view.offset(x: dx)
-                    } animation: { _ in .easeInOut(duration: 0.6) }
-                    .position(x: geo.size.width - 40, y: geo.size.height * 0.78)
+                if menuHintVisible && !showSettings {
+                    Label(menuSelection == 0 ? "Click to play" : "Click to open " + ["Play", "Shop", "Settings"][menuSelection], systemImage: "arrow.right")
+                        .font(.subheadline.weight(.medium))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .glassEffect(.regular, in: Capsule())
+                        .position(x: geo.size.width - 116, y: geo.size.height * 0.78)
+                        .transition(.opacity)
+                }
             }
             .allowsHitTesting(false)
         }
@@ -337,10 +353,47 @@ struct ContentView: View {
 
     // MARK: Bank and shop
 
-    /// Keeps the screen on only while a round is running in the foreground.
-    /// Camera Control presses and swipes do not count as touch activity for auto-lock.
+    /// Camera Control overlays may briefly make the scene inactive. Only actual background
+    /// entry releases a needed assertion. Settings renews a bounded lease on real interaction.
     private func updateIdleTimer() {
-        UIApplication.shared.isIdleTimerDisabled = phase == .playing && scenePhase == .active && !showSettings
+        let roundNeedsDisplay = phase == .playing && !showSettings
+        let settingsInUse = showSettings && settingsAwakeUntil > Date()
+        UIApplication.shared.isIdleTimerDisabled = scenePhase != .background && (roundNeedsDisplay || settingsInUse)
+    }
+
+    private func clearSettingsAwake() {
+        settingsAwakeToken += 1
+        settingsAwakeUntil = .distantPast
+        updateIdleTimer()
+    }
+
+    private func noteSettingsInteraction() {
+        guard showSettings, scenePhase != .background else { return }
+        settingsAwakeToken += 1
+        let token = settingsAwakeToken
+        settingsAwakeUntil = Date().addingTimeInterval(60)
+        updateIdleTimer()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+            guard settingsAwakeToken == token else { return }
+            settingsAwakeUntil = .distantPast
+            updateIdleTimer()
+        }
+    }
+
+    private func hideMenuHint() {
+        menuHintToken += 1
+        menuHintVisible = false
+    }
+
+    private func showMenuHint() {
+        guard phase == .menu, !showSettings else { return }
+        menuHintToken += 1
+        let token = menuHintToken
+        withAnimation(.easeOut(duration: 0.18)) { menuHintVisible = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
+            guard menuHintToken == token else { return }
+            withAnimation(.easeOut(duration: 0.25)) { menuHintVisible = false }
+        }
     }
 
     /// Adds the lightning earned this round to the saved balance. Only the part not yet credited is added.
@@ -593,10 +646,12 @@ struct ContentView: View {
         }
         cam.onSensitivity = { value in
             guard showSettings else { return }
+            noteSettingsInteraction()
             steerGain = min(max((value * 10).rounded() / 10, 1), 7)
         }
         cam.onHaptics = { value in
             guard showSettings else { return }
+            noteSettingsInteraction()
             haptics = value
         }
         cam.syncSettings(sensitivity: steerGain, haptics: haptics)
@@ -682,6 +737,7 @@ struct ContentView: View {
         withAnimation(.smooth) { phase = .menu }
         updateCameraControls()
         startCamera()
+        showMenuHint()
     }
 
     private func retry() {
