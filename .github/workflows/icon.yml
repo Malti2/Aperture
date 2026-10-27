@@ -1,0 +1,38 @@
+name: Apply icon
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode icon and set version
+        run: |
+          set -e
+          D=Sources/Assets.xcassets/AppIcon.appiconset
+          mkdir -p "$D"
+          cat icon-b64/chunk_aa icon-b64/chunk_ab icon-b64/chunk_ac | tr -d '\n' | base64 -d > "$D/AppIcon-1024.png"
+          echo "d047a422232d948eba80800a7088b063beaafbb5ec45b6c15cf165d267629c15  $D/AppIcon-1024.png" | sha256sum -c -
+          printf '%s\n' '{"info":{"author":"xcode","version":1}}' > Sources/Assets.xcassets/Contents.json
+          printf '%s\n' '{"images":[{"filename":"AppIcon-1024.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"author":"xcode","version":1}}' > "$D/Contents.json"
+          cp "$D/AppIcon-1024.png" docs/icon.png
+          rm -rf icon-b64
+          sed -i 's/MARKETING_VERSION: "1.2.14"/MARKETING_VERSION: "27.0.0"/; s/CURRENT_PROJECT_VERSION: "23"/CURRENT_PROJECT_VERSION: "24"/' project.yml
+          sed -i 's/^        INFOPLIST_KEY_CFBundleDisplayName: "Aperture"/&\n        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon/' project.yml
+          python3 - <<'PY'
+          p="Scripts/update-altstore-source.py"
+          s=open(p).read()
+          s=s.replace('    with open("docs/icon.png", "wb") as f:\n        f.write(icon_png())\n','')
+          open(p,"w").write(s)
+          PY
+          grep -n 'MARKETING\|CURRENT_PROJECT\|APPICON' project.yml
+          grep -c 'docs/icon.png", "wb' Scripts/update-altstore-source.py || true
+      - name: Commit
+        run: |
+          git config user.name "Malti2"
+          git config user.email "181262855+Malti2@users.noreply.github.com"
+          git add -A
+          git commit -m "Add app icon, version 27.0.0 [skip ci]"
+          git push
