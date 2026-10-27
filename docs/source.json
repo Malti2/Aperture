@@ -2,7 +2,7 @@
   "name": "Aperture",
   "subtitle": "Arcade game steered with Camera Control",
   "description": "AltStore source for Aperture, an arcade game for iPhone steered with Camera Control.",
-  "iconURL": "https://malti2.github.io/Aperture/icon.png",
+  "iconURL": "https://malti2.github.io/Aperture/icon.png?v=27.0.0",
   "website": "https://github.com/Malti2/Aperture",
   "tintColor": "#30D158",
   "featuredApps": [
@@ -15,7 +15,7 @@
       "developerName": "Malte",
       "subtitle": "Steer with Camera Control.",
       "localizedDescription": "An arcade game for iPhone that you steer with the Camera Control button. Needs an iPhone with Camera Control. The camera runs only so the button works. Nothing is recorded, stored or sent.",
-      "iconURL": "https://malti2.github.io/Aperture/icon.png",
+      "iconURL": "https://malti2.github.io/Aperture/icon.png?v=27.0.0",
       "tintColor": "#30D158",
       "category": "games",
       "versions": [
