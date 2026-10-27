@@ -80,6 +80,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Never touch a release that is already public.
+          published=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.tag_name=="v1.2.2" and .draft==false) | .id')
+          if [ -n "$published" ]; then
+            echo "v1.2.2 is already published, leaving it alone"
+            exit 0
+          fi
           gh release delete v1.2.2 --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
           gh release create v1.2.2 --repo "$GITHUB_REPOSITORY" --draft --target main \
             --title "Aperture 1.2.2 (unsigned)" \
