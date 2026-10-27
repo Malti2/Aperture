@@ -290,7 +290,10 @@ struct ContentView: View {
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
                         .glassEffect(.regular, in: Capsule())
-                        .position(x: geo.size.width - 116, y: geo.size.height * 0.662)
+                        .fixedSize()
+                        // Right edge stays clear of the system label, whatever the text length.
+                        .frame(width: geo.size.width - 126, alignment: .trailing)
+                        .position(x: (geo.size.width - 126) / 2, y: geo.size.height * 0.662)
                         .transition(.opacity)
                 }
             }
