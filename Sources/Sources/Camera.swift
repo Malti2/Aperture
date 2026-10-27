@@ -15,10 +15,12 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
     private var configured = false
     private var steerSlider: AVCaptureSlider?
     private var speedPicker: AVCaptureIndexPicker?
+    private var shopPicker: AVCaptureIndexPicker?
+    private var shopIndex = 0
     private weak var gameEngine: Engine?
 
-    /// Which Camera Control entry is shown. Steer while playing and in the shop, Speed everywhere else.
-    enum ControlMode { case steer, speed }
+    /// Which Camera Control entry is shown. Steer while playing, a ball picker in the shop, Speed everywhere else.
+    enum ControlMode { case steer, speed, shop }
     private var mode: ControlMode = .speed
 
     override init() {
@@ -68,35 +70,49 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
     }
 
     /// Shows only the entry that fits the current screen. Controls may be added and removed while the session runs.
-    func setMode(_ newMode: ControlMode) {
+    func setMode(_ newMode: ControlMode, shopIndex: Int = 0) {
         queue.async { [weak self] in
             guard let self = self else { return }
             self.mode = newMode
+            self.shopIndex = shopIndex
             self.applyMode()
+        }
+    }
+
+    /// Keeps the Camera Control ball picker in line with a touch selection.
+    func syncShop(index: Int) {
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            self.shopIndex = index
+            if let p = self.shopPicker, p.selectedIndex != index { p.selectedIndex = index }
         }
     }
 
     /// Runs on the camera queue.
     private func applyMode() {
-        guard session.supportsControls, let slider = steerSlider, let picker = speedPicker else { return }
-        let hasSlider = session.controls.contains { $0 === slider }
-        let hasPicker = session.controls.contains { $0 === picker }
+        guard session.supportsControls, let slider = steerSlider, let speed = speedPicker, let ball = shopPicker else { return }
+        let all: [AVCaptureControl] = [slider, speed, ball]
+        let wanted: AVCaptureControl
+        switch mode {
+        case .steer: wanted = slider
+        case .speed: wanted = speed
+        case .shop: wanted = ball
+        }
+        for c in all where c !== wanted && session.controls.contains(where: { $0 === c }) {
+            session.removeControl(c)
+        }
+        guard !session.controls.contains(where: { $0 === wanted }) else { return }
         switch mode {
         case .steer:
-            if hasPicker { session.removeControl(picker) }
-            if !hasSlider {
-                // A fresh slider starts in the middle, so steering stays relative to this moment.
-                gameEngine?.rawSteer = 0.5
-                slider.value = 0.5
-                if session.canAddControl(slider) { session.addControl(slider) }
-            }
+            // A fresh slider starts in the middle, so steering stays relative to this moment.
+            gameEngine?.rawSteer = 0.5
+            slider.value = 0.5
         case .speed:
-            if hasSlider { session.removeControl(slider) }
-            if !hasPicker {
-                picker.selectedIndex = min(max(gameEngine?.level ?? 1, 0), Engine.levelNames.count - 1)
-                if session.canAddControl(picker) { session.addControl(picker) }
-            }
+            speed.selectedIndex = min(max(gameEngine?.level ?? 1, 0), Engine.levelNames.count - 1)
+        case .shop:
+            ball.selectedIndex = min(max(shopIndex, 0), ballSkins.count - 1)
         }
+        if session.canAddControl(wanted) { session.addControl(wanted) }
     }
 
     func stop() {
@@ -137,6 +153,13 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
                 engine.level = index
             }
             speedPicker = picker
+            let ball = AVCaptureIndexPicker("Ball", symbolName: "circle.fill", localizedIndexTitles: ballSkins.map { $0.name })
+            ball.selectedIndex = 0
+            ball.setActionQueue(queue) { index in
+                // Selection only. Buying always needs the hold on screen.
+                DispatchQueue.main.async { engine.onShopPick?(index) }
+            }
+            shopPicker = ball
             gameEngine = engine
             applyMode()
         }
