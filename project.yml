@@ -17,9 +17,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: de.malte.aperture
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: "Aperture"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_NSCameraUsageDescription: "Aperture keeps the camera running without recording so the Camera Control button works as a game controller. Nothing is saved or sent."
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UIUserInterfaceStyle: Dark
-        MARKETING_VERSION: "1.2.14"
-        CURRENT_PROJECT_VERSION: "23"
+        MARKETING_VERSION: "27.0.0"
+        CURRENT_PROJECT_VERSION: "24"

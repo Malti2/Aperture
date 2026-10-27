@@ -100,8 +100,6 @@ def main():
     with open("docs/source.json", "w") as f:
         json.dump(source, f, indent=2, ensure_ascii=False)
         f.write("\n")
-    with open("docs/icon.png", "wb") as f:
-        f.write(icon_png())
 
 
 if __name__ == "__main__":
