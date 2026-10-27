@@ -161,12 +161,24 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
     private func configure(engine: Engine) {
         session.beginConfiguration()
         session.sessionPreset = .low
-        if let device = AVCaptureDevice.default(for: .video),
+        // Keep the rear camera for this first power test. Front-camera control behavior
+        // and relative energy use require a separate on-device comparison.
+        let captureDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+            ?? AVCaptureDevice.default(for: .video)
+        if let device = captureDevice,
            let input = try? AVCaptureDeviceInput(device: device),
            session.canAddInput(input) {
             session.addInput(input)
-            let output = AVCaptureVideoDataOutput()
-            if session.canAddOutput(output) { session.addOutput(output) }
+            // A session still needs an output. Photo output is on-demand; no capture is made.
+            let output = AVCapturePhotoOutput()
+            if session.canAddOutput(output) {
+                session.addOutput(output)
+            } else {
+                // Preserve the previously working output if photo output is unavailable.
+                let fallback = AVCaptureVideoDataOutput()
+                if session.canAddOutput(fallback) { session.addOutput(fallback) }
+            }
+            configureLowPowerDevice(device)
         }
         if session.supportsControls {
             let slider = AVCaptureSlider("Steer", symbolName: "arrow.left.and.right", in: 0...1, step: 0.001)
@@ -234,6 +246,48 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
             info = "Camera Control: not supported on this device"
         }
         DispatchQueue.main.async { self.controlsInfo = info }
+    }
+
+    /// Must run on the camera queue, inside the session configuration transaction.
+    /// Use the exact supported duration, never a rounded integer frames-per-second value.
+    private func configureLowPowerDevice(_ device: AVCaptureDevice) {
+        let candidates = device.formats.filter {
+            let subtype = CMFormatDescriptionGetMediaSubType($0.formatDescription)
+            return (subtype == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange ||
+                    subtype == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange) &&
+                !$0.videoSupportedFrameRateRanges.isEmpty
+        }
+        let format = candidates.min { a, b in
+            let da = CMVideoFormatDescriptionGetDimensions(a.formatDescription)
+            let db = CMVideoFormatDescriptionGetDimensions(b.formatDescription)
+            let areaA = Int64(da.width) * Int64(da.height)
+            let areaB = Int64(db.width) * Int64(db.height)
+            if areaA != areaB { return areaA < areaB }
+            let fpsA = a.videoSupportedFrameRateRanges.map(\.minFrameRate).min() ?? .infinity
+            let fpsB = b.videoSupportedFrameRateRanges.map(\.minFrameRate).min() ?? .infinity
+            return fpsA < fpsB
+        }
+        guard let format = format,
+              let range = format.videoSupportedFrameRateRanges.min(by: { $0.minFrameRate < $1.minFrameRate }),
+              range.maxFrameDuration.isValid, range.maxFrameDuration.seconds.isFinite,
+              range.maxFrameDuration.seconds > 0 else { return }
+        do {
+            try device.lockForConfiguration()
+            defer { device.unlockForConfiguration() }
+            // Setting activeFormat changes the session preset to inputPriority.
+            device.activeFormat = format
+            let duration = range.maxFrameDuration
+            device.activeVideoMinFrameDuration = duration
+            device.activeVideoMaxFrameDuration = duration
+            if device.isFocusModeSupported(.locked) { device.focusMode = .locked }
+            if device.isExposureModeSupported(.locked) { device.exposureMode = .locked }
+            if device.isWhiteBalanceModeSupported(.locked) { device.whiteBalanceMode = .locked }
+            device.automaticallyAdjustsVideoHDREnabled = false
+            if format.isVideoHDRSupported { device.isVideoHDREnabled = false }
+        } catch {
+            // A denied configuration lock leaves the existing low preset in place.
+            // Do not sacrifice Camera Control just to apply this power experiment.
+        }
     }
 
     // MARK: AVCaptureSessionControlsDelegate
