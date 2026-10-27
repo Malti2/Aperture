@@ -8,6 +8,8 @@ BUNDLE_ID = "de.malte.aperture"
 ASSET = "Aperture.ipa"
 MIN_OS = "26.0"
 TINT = "#30D158"
+# Must match NSCameraUsageDescription in the app. AltStore compares it with the IPA.
+CAMERA_TEXT = "Aperture keeps the camera running without recording so the Camera Control button works as a game controller. Nothing is saved or sent."
 
 
 def api(path):
@@ -88,6 +90,10 @@ def main():
             "tintColor": TINT,
             "category": "games",
             "versions": versions(),
+            "appPermissions": {
+                "entitlements": [],
+                "privacy": {"NSCameraUsageDescription": CAMERA_TEXT},
+            },
         }],
         "news": [],
     }
