@@ -13,6 +13,15 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
     private let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "aperture.camera")
     private var configured = false
+    // Camera-queue state, touched only on `queue`. Every notification hops onto `queue` first,
+    // so it is ordered with start() and stop().
+    private var wantsRunning = false
+    private var generation = 0            // bumped whenever the intent changes; stale retries check it
+    private var restartAttempts = 0       // budget for automatic restarts after a media services reset
+    private var lastManualStart = Date.distantPast
+    private static let maxRestartAttempts = 3
+    private static let stableSeconds = 10.0
+    @Published var cameraStopped = false
     private var steerSlider: AVCaptureSlider?
     private var speedPicker: AVCaptureIndexPicker?
     private var shopPicker: AVCaptureIndexPicker?
@@ -36,9 +45,30 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
         super.init()
         NotificationCenter.default.addObserver(forName: AVCaptureSession.didStartRunningNotification, object: session, queue: .main) { [weak self] _ in
             self?.running = true
+            self?.cameraStopped = false
+            // A restart only counts as recovered after the session stayed up for a while.
+            self?.queue.async {
+                guard let self = self else { return }
+                let gen = self.generation
+                self.queue.asyncAfter(deadline: .now() + Self.stableSeconds) {
+                    if self.generation == gen, self.wantsRunning, self.session.isRunning { self.restartAttempts = 0 }
+                }
+            }
         }
         NotificationCenter.default.addObserver(forName: AVCaptureSession.didStopRunningNotification, object: session, queue: .main) { [weak self] _ in
             self?.running = false
+        }
+        // Recovery as in Apple's AVCam sample: restart automatically only after a media services reset;
+        // an interruption resumes by itself when it ends; anything else waits for the next explicit start.
+        NotificationCenter.default.addObserver(forName: AVCaptureSession.runtimeErrorNotification, object: session, queue: nil) { [weak self] note in
+            let code = (note.userInfo?[AVCaptureSessionErrorKey] as? AVError)?.code
+            self?.queue.async { self?.handleRuntimeError(code) }
+        }
+        NotificationCenter.default.addObserver(forName: AVCaptureSession.interruptionEndedNotification, object: session, queue: nil) { [weak self] _ in
+            self?.queue.async {
+                guard let self = self, self.wantsRunning, !self.session.isRunning, !self.session.isInterrupted else { return }
+                self.session.startRunning()
+            }
         }
     }
 
@@ -52,11 +82,19 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
         }
     }
 
-    func start(engine: Engine) {
+    /// resetBudget is true for lifecycle starts (foreground, menu, retry). The per-screen check passes false,
+    /// so it can never refill the automatic restart budget.
+    func start(engine: Engine, resetBudget: Bool = true) {
         authorization = AVCaptureDevice.authorizationStatus(for: .video)
         guard authorization == .authorized else { return }
         queue.async { [weak self] in
             guard let self = self else { return }
+            if !self.wantsRunning { self.generation += 1 }
+            self.wantsRunning = true
+            if resetBudget { self.restartAttempts = 0 }
+            else if !self.configured || self.session.isRunning || self.session.isInterrupted { return }
+            else if Date().timeIntervalSince(self.lastManualStart) < 3 { return }
+            self.lastManualStart = Date()
             if !self.configured {
                 self.configure(engine: engine)
                 self.configured = true
@@ -151,9 +189,24 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
         }
     }
 
+    /// Camera queue. Restart only after a media services reset, and only within the budget.
+    private func handleRuntimeError(_ code: AVError.Code?) {
+        DispatchQueue.main.async { self.cameraStopped = true }
+        guard wantsRunning, code == .mediaServicesWereReset, restartAttempts < Self.maxRestartAttempts else { return }
+        restartAttempts += 1
+        let gen = generation
+        queue.asyncAfter(deadline: .now() + 0.4 * Double(restartAttempts)) { [weak self] in
+            guard let self = self, self.generation == gen, self.wantsRunning,
+                  !self.session.isRunning, !self.session.isInterrupted else { return }
+            self.session.startRunning()
+        }
+    }
+
     func stop() {
         queue.async { [weak self] in
             guard let self = self else { return }
+            self.wantsRunning = false
+            self.generation += 1
             if self.session.isRunning { self.session.stopRunning() }
         }
     }
