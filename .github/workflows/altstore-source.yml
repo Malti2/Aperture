@@ -1,0 +1,46 @@
+name: Update AltStore Source
+
+on:
+  release:
+    types: [published, edited]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: altstore-source
+  cancel-in-progress: true
+
+jobs:
+  update-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Generate source from GitHub Releases
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 Scripts/update-altstore-source.py
+      - name: Check release downloads
+        run: |
+          python3 - <<'PY'
+          import json, urllib.request
+          with open('docs/source.json') as f: source = json.load(f)
+          for app in source['apps']:
+              assert app['versions'], 'no published release with Aperture.ipa'
+              for version in app['versions']:
+                  req = urllib.request.Request(version['downloadURL'], method='HEAD', headers={'User-Agent': 'Aperture-AltStore-Source-CI'})
+                  with urllib.request.urlopen(req) as response:
+                      assert response.status == 200, version['downloadURL']
+          PY
+      - name: Commit updated source
+        run: |
+          git add docs/source.json docs/icon.png
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "Update AltStore source for ${{ github.event.release.tag_name || 'manual run' }} [skip ci]"
+          git push origin HEAD:main
