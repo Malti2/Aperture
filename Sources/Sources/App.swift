@@ -221,11 +221,6 @@ struct ContentView: View {
                                 .buttonStyle(.glass)
                                 .buttonBorderShape(.circle)
                             }
-                            Label(Engine.levelNames[min(max(engine.level, 0), 2)], systemImage: "speedometer")
-                                .font(.footnote.weight(.medium))
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 9)
-                                .glassEffect(.regular, in: .capsule)
                         }
                     }
                 }
@@ -287,6 +282,7 @@ struct ContentView: View {
             .padding(28)
             .frame(maxWidth: 320)
             .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 34, style: .continuous))
+            .offset(y: -56)
             GeometryReader { geo in
                 if menuHintVisible && !showSettings {
                     Label(menuSelection == 0 ? "Click to play" : "Click to open " + ["Play", "Shop", "Settings"][menuSelection], systemImage: "arrow.right")
@@ -294,7 +290,7 @@ struct ContentView: View {
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
                         .glassEffect(.regular, in: Capsule())
-                        .position(x: geo.size.width - 116, y: geo.size.height * 0.78)
+                        .position(x: geo.size.width - 116, y: geo.size.height * 0.662)
                         .transition(.opacity)
                 }
             }
