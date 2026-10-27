@@ -42,6 +42,7 @@ final class Engine {
     var onEnd: (() -> Void)?
     var onDash: (() -> Void)?
     var pressHandler: (() -> Void)?
+    var onShopPick: ((Int) -> Void)?
     var pressBegan: (() -> Void)?
     var pressCancel: (() -> Void)?
 
