@@ -179,6 +179,8 @@ struct ContentView: View {
             }
         }
 
+        // The Shop shows only the ball picker; the idle ball swinging behind it stays hidden.
+        if phase == .shop { return }
         let y = engine.playerY
         let r = engine.radius
         let step = max(6, engine.worldSpeed * 0.012)
@@ -520,6 +522,7 @@ struct ContentView: View {
                                 .fill(.clear)
                                 .frame(width: ballBig, height: ballBig)
                                 .glassEffect(.regular.tint(ballSkins[i].color.opacity(owned(i) ? 0.9 : 0.55)).interactive(), in: .circle)
+                                .overlay(Circle().fill(Color.black.opacity(0.4 * min(d, 1))).allowsHitTesting(false))
                                 .scaleEffect(scale)
                                 .opacity(alpha)
                                 .offset(y: pos)
