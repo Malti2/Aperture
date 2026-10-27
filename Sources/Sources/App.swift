@@ -10,11 +10,11 @@ struct BallSkin {
 
 /// Prototype prices. Not final.
 let ballSkins: [BallSkin] = [
-    BallSkin(name: "Pearl", color: .white, cost: 0),
-    BallSkin(name: "Azure", color: Color(red: 0.35, green: 0.62, blue: 0.95), cost: 150),
-    BallSkin(name: "Ember", color: Color(red: 0.85, green: 0.30, blue: 0.30), cost: 300),
-    BallSkin(name: "Amber", color: Color(red: 0.95, green: 0.68, blue: 0.25), cost: 450),
-    BallSkin(name: "Jade", color: Color(red: 0.30, green: 0.80, blue: 0.55), cost: 600),
+    BallSkin(name: "White", color: .white, cost: 0),
+    BallSkin(name: "Light Blue", color: Color(red: 0.35, green: 0.62, blue: 0.95), cost: 150),
+    BallSkin(name: "Red", color: Color(red: 0.85, green: 0.30, blue: 0.30), cost: 300),
+    BallSkin(name: "Golden Orange", color: Color(red: 0.95, green: 0.68, blue: 0.25), cost: 450),
+    BallSkin(name: "Mint Green", color: Color(red: 0.30, green: 0.80, blue: 0.55), cost: 600),
     BallSkin(name: "Violet", color: Color(red: 0.62, green: 0.45, blue: 0.95), cost: 800)
 ]
 
@@ -26,6 +26,7 @@ struct ContentView: View {
     @State private var lastScore = 0
     @State private var endedAt = Date.distantPast
     @State private var showSettings = false
+    @State private var menuSelection = 0
     // New key: the old range ended at 4.0, which is now the default and the middle of the slider.
     @AppStorage("steerGainV2") private var steerGain = 4.0
     @AppStorage("haptics") private var haptics = true
@@ -65,11 +66,17 @@ struct ContentView: View {
         .background(CaptureEventView(engine: engine).allowsHitTesting(false))
         .preferredColorScheme(.dark)
         .onAppear(perform: setup)
-        .sheet(isPresented: $showSettings) { settingsSheet }
-        .onChange(of: steerGain) { _, v in Engine.steerGain = CGFloat(v) }
-        .onChange(of: phase) { _, new in
+        .sheet(isPresented: $showSettings) {
+            settingsSheet.background(CaptureEventView(engine: engine).allowsHitTesting(false))
+        }
+        .onChange(of: steerGain) { _, v in
+            Engine.steerGain = CGFloat(v)
+            cam.syncSettings(sensitivity: v, haptics: haptics)
+        }
+        .onChange(of: haptics) { _, v in cam.syncSettings(sensitivity: steerGain, haptics: v) }
+        .onChange(of: phase) { _, _ in
             updateIdleTimer()
-            cam.setMode(new == .playing ? .steer : (new == .shop ? .shop : .speed), shopIndex: selected)
+            updateCameraControls()
         }
         .onChange(of: scenePhase) { _, new in
             updateIdleTimer()
@@ -79,20 +86,17 @@ struct ContentView: View {
         .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
             if phase == .playing && !engine.paused { bankSync() }
         }
-        .onChange(of: showSettings) { _, open in
-            if open {
-                cam.stop()
-            } else if phase == .menu {
-                engine.steerBaseline = engine.rawSteer
-                startCamera()
-            }
+        .onChange(of: showSettings) { _, _ in
+            cancelHold()
+            updateCameraControls()
+            if scenePhase == .active { startCamera() }
         }
         .onChange(of: scenePhase) { _, new in
             // The Camera Control overlay can make the scene inactive.
             // Keep the session running then, otherwise the overlay closes at once.
             switch new {
             case .active:
-                if !demo && !showSettings && phase != .over { cam.start(engine: engine) }
+                if !demo && phase != .over { updateCameraControls(); cam.start(engine: engine) }
             case .background:
                 bankSync()
                 cam.stop()
@@ -116,7 +120,7 @@ struct ContentView: View {
             DragGesture(minimumDistance: 0)
                 .onChanged { value in
                     guard engine.size.width > 0 else { return }
-                    if phase == .menu { beginPlay(); return }
+                    if phase == .menu && !showSettings { beginPlay(); return }
                     guard phase == .playing else { return }
                     engine.target = min(max(value.location.x / engine.size.width, 0), 1)
                 }
@@ -236,8 +240,15 @@ struct ContentView: View {
             VStack(spacing: 16) {
                 Text("Aperture")
                     .font(.system(size: 44, weight: .bold, design: .rounded))
-                Text("Press Camera Control to start")
+                Text("Click to \(menuSelection == 0 ? "play" : "open " + ["Play", "Shop", "Settings"][menuSelection])")
                     .font(.headline)
+                Picker("Main Menu", selection: $menuSelection) {
+                    Text("Play").tag(0)
+                    Text("Shop").tag(1)
+                    Text("Settings").tag(2)
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: menuSelection) { _, index in cam.syncMenu(index: index) }
                 if best > 0 {
                     Text("Best \(best)").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
                 }
@@ -297,7 +308,7 @@ struct ContentView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { showSettings = false }
+                    Button("Back") { showSettings = false }
                 }
             }
         }
@@ -517,7 +528,7 @@ struct ContentView: View {
                 HStack(alignment: .bottom) {
                     shopAction
                     Spacer()
-                    Button("Done") { exitShop() }
+                    Button("Back") { exitShop() }
                         .buttonStyle(.glass)
                         .controlSize(.large)
                 }
@@ -574,10 +585,21 @@ struct ContentView: View {
         engine.onShopPick = { index in DispatchQueue.main.async { if phase == .shop { select(index) } } }
         engine.pressBegan = { beginHold() }
         engine.pressCancel = { cancelHold() }
-        engine.onSteer = { value in
-            // Start only when the control moves away from the value it had when the menu appeared.
-            if phase == .menu && !showSettings && abs(value - engine.steerBaseline) > 0.015 { beginPlay() }
+        // Navigation swipes must never start a round.
+        engine.onSteer = nil
+        cam.onMenuPick = { index in
+            guard phase == .menu, !showSettings, (0...2).contains(index) else { return }
+            menuSelection = index
         }
+        cam.onSensitivity = { value in
+            guard showSettings else { return }
+            steerGain = min(max((value * 10).rounded() / 10, 1), 7)
+        }
+        cam.onHaptics = { value in
+            guard showSettings else { return }
+            haptics = value
+        }
+        cam.syncSettings(sensitivity: steerGain, haptics: haptics)
         enterMenu()
         if demoShop && demo {
             bank = 172
@@ -610,9 +632,15 @@ struct ContentView: View {
     }
 
     private func handlePress() {
+        guard !showSettings, scenePhase != .background else { return }
         switch phase {
         case .playing: engine.dash()
-        case .menu: beginPlay()
+        case .menu:
+            switch menuSelection {
+            case 1: enterShop()
+            case 2: showSettings = true
+            default: beginPlay()
+            }
         case .paused: break
         case .shop:
             guard Date().timeIntervalSince(shopEntered) > 0.6 else { return }
@@ -625,7 +653,23 @@ struct ContentView: View {
         }
     }
 
+    private func updateCameraControls() {
+        let mode: CameraService.ControlMode
+        if showSettings { mode = .settings }
+        else {
+            switch phase {
+            case .menu: mode = .menu
+            case .shop: mode = .shop
+            case .playing: mode = .steer
+            case .paused, .over: mode = .speed
+            }
+        }
+        cam.setMode(mode, shopIndex: selected)
+    }
+
     private func enterMenu() {
+        menuSelection = 0
+        cam.syncMenu(index: 0)
         let slider = engine.target
         engine.reset()
         engine.target = slider
@@ -636,6 +680,7 @@ struct ContentView: View {
         cam.recenter(engine: engine)
         engine.steerBaseline = 0.5
         withAnimation(.smooth) { phase = .menu }
+        updateCameraControls()
         startCamera()
     }
 
