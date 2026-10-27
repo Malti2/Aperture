@@ -66,7 +66,10 @@ struct ContentView: View {
         .onAppear(perform: setup)
         .sheet(isPresented: $showSettings) { settingsSheet }
         .onChange(of: steerGain) { _, v in Engine.steerGain = CGFloat(v) }
-        .onChange(of: phase) { _, _ in updateIdleTimer() }
+        .onChange(of: phase) { _, new in
+            updateIdleTimer()
+            cam.setMode(new == .playing || new == .shop ? .steer : .speed)
+        }
         .onChange(of: scenePhase) { _, new in
             updateIdleTimer()
             if new != .active { cancelHold() }
@@ -232,7 +235,7 @@ struct ContentView: View {
             VStack(spacing: 16) {
                 Text("Aperture")
                     .font(.system(size: 44, weight: .bold, design: .rounded))
-                Text("Swipe Camera Control to start")
+                Text("Press Camera Control to start")
                     .font(.headline)
                 if best > 0 {
                     Text("Best \(best)").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
@@ -535,7 +538,8 @@ struct ContentView: View {
     private func handlePress() {
         switch phase {
         case .playing: engine.dash()
-        case .menu, .paused: break
+        case .menu: beginPlay()
+        case .paused: break
         case .shop:
             guard Date().timeIntervalSince(shopEntered) > 0.6 else { return }
             if owned(selected) {
