@@ -6,8 +6,6 @@ import AVKit
 /// The session exists only so the system delivers Camera Control events.
 final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsDelegate {
     @Published var authorization = AVCaptureDevice.authorizationStatus(for: .video)
-    @Published var running = false
-    @Published var controlsInfo = "Controls: not set up yet"
     @Published var overlayCount = 0
 
     private let session = AVCaptureSession()
@@ -23,7 +21,6 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
     private static let stableSeconds = 10.0
     @Published var cameraStopped = false
     private var steerSlider: AVCaptureSlider?
-    private var speedPicker: AVCaptureIndexPicker?
     private var shopPicker: AVCaptureIndexPicker?
     private var menuPicker: AVCaptureIndexPicker?
     private var settingsSpeed: AVCaptureSlider?
@@ -38,13 +35,12 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
     private weak var gameEngine: Engine?
 
     /// Each screen exposes only its own controls. Menu actions share one named picker.
-    enum ControlMode { case steer, speed, shop, menu, settings }
+    enum ControlMode { case steer, none, shop, menu, settings }
     private var mode: ControlMode = .menu
 
     override init() {
         super.init()
         NotificationCenter.default.addObserver(forName: AVCaptureSession.didStartRunningNotification, object: session, queue: .main) { [weak self] _ in
-            self?.running = true
             self?.cameraStopped = false
             // A restart only counts as recovered after the session stayed up for a while.
             self?.queue.async {
@@ -54,9 +50,6 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
                     if self.generation == gen, self.wantsRunning, self.session.isRunning { self.restartAttempts = 0 }
                 }
             }
-        }
-        NotificationCenter.default.addObserver(forName: AVCaptureSession.didStopRunningNotification, object: session, queue: .main) { [weak self] _ in
-            self?.running = false
         }
         // Recovery as in Apple's AVCam sample: restart automatically only after a media services reset;
         // an interruption resumes by itself when it ends; anything else waits for the next explicit start.
@@ -155,14 +148,14 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
 
     /// Runs on the camera queue. Never changes the live steering value while playing.
     private func applyMode() {
-        guard session.supportsControls, let slider = steerSlider, let speed = speedPicker,
+        guard session.supportsControls, let slider = steerSlider,
               let ball = shopPicker, let menu = menuPicker,
               let sensitivity = settingsSpeed, let haptics = hapticsPicker else { return }
-        let all: [AVCaptureControl] = [slider, speed, ball, menu, sensitivity, haptics]
+        let all: [AVCaptureControl] = [slider, ball, menu, sensitivity, haptics]
         let wanted: [AVCaptureControl]
         switch mode {
         case .steer: wanted = [slider]
-        case .speed: wanted = [] // Game speed is fixed; no picker.
+        case .none: wanted = [] // Paused or over: no controls.
         case .shop: wanted = [ball]
         case .menu: wanted = [menu]
         case .settings: wanted = [sensitivity, haptics]
@@ -174,8 +167,6 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
             if control === slider {
                 gameEngine?.rawSteer = 0.5
                 slider.value = 0.5
-            } else if control === speed {
-                speed.selectedIndex = min(max(gameEngine?.level ?? 1, 0), Engine.levelNames.count - 1)
             } else if control === ball {
                 ball.selectedIndex = min(max(shopIndex, 0), ballSkins.count - 1)
             } else if control === menu {
@@ -239,23 +230,8 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
             steerSlider = slider
             slider.setActionQueue(queue) { [weak self] value in
                 guard self?.mode == .steer else { return }
-                // Relative mapping: the ball moves by the slider delta times the gain.
-                // A swipe delivers roughly a fixed number of steps, so the delta shrinks with the step size.
-                // stepScale keeps the same feel as the earlier 0.005 step.
-                let delta = CGFloat(value) - engine.rawSteer
-                engine.rawSteer = CGFloat(value)
-                if !engine.paused {
-                    engine.target = min(max(engine.target + delta * Engine.steerGain * Engine.stepScale, 0), 1)
-                }
-                DispatchQueue.main.async { engine.onSteer?(CGFloat(value)) }
+                engine.steer(slider: CGFloat(value))
             }
-            let picker = AVCaptureIndexPicker("Speed", symbolName: "speedometer", localizedIndexTitles: Engine.levelNames)
-            picker.selectedIndex = 1
-            picker.setActionQueue(queue) { [weak self] index in
-                guard self?.mode == .speed else { return }
-                engine.level = index
-            }
-            speedPicker = picker
             let ball = AVCaptureIndexPicker("Ball", symbolName: "circle.fill", localizedIndexTitles: ballSkins.map { $0.name })
             ball.selectedIndex = 0
             ball.setActionQueue(queue) { [weak self] index in
@@ -291,14 +267,9 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
             applyMode()
         }
         session.commitConfiguration()
-        let info: String
         if session.supportsControls {
             session.setControlsDelegate(self, queue: queue)
-            info = "Camera Control: \(session.controls.count) of \(session.maxControlsCount) controls registered"
-        } else {
-            info = "Camera Control: not supported on this device"
         }
-        DispatchQueue.main.async { self.controlsInfo = info }
     }
 
     /// Must run on the camera queue, inside the session configuration transaction.
@@ -350,27 +321,4 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
     func sessionControlsWillEnterFullscreenAppearance(_ session: AVCaptureSession) {}
     func sessionControlsWillExitFullscreenAppearance(_ session: AVCaptureSession) {}
     func sessionControlsDidBecomeInactive(_ session: AVCaptureSession) {}
-}
-
-/// Receives full presses of Camera Control (and other capture buttons).
-struct CaptureEventView: UIViewRepresentable {
-    let engine: Engine
-
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        let interaction = AVCaptureEventInteraction { event in
-            switch event.phase {
-            case .began:
-                DispatchQueue.main.async { engine.pressBegan?() }
-            case .ended:
-                DispatchQueue.main.async { engine.pressHandler?() }
-            default:
-                DispatchQueue.main.async { engine.pressCancel?() }
-            }
-        }
-        view.addInteraction(interaction)
-        return view
-    }
-
-    func updateUIView(_ uiView: UIView, context: Context) {}
 }

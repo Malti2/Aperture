@@ -42,7 +42,7 @@ Requires macOS, Xcode 26 or newer, and XcodeGen.
 ```bash
 brew install xcodegen
 xcodegen generate --spec project.yml
-open CameraControlTest.xcodeproj
+open Aperture.xcodeproj
 ```
 
 You can also fork the repository and run its **Build** workflow in GitHub Actions to get an unsigned IPA.

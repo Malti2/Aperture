@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Plain game state. Mutated once per frame from the render loop.
+/// Plain game state. Stepped once per display frame by `GameLoop`, drawn by `PlayfieldView`.
+/// Steering input arrives from the camera queue, so target and rawSteer sit behind a lock.
 final class Engine {
     struct Bar {
         var y: CGFloat
@@ -11,38 +12,33 @@ final class Engine {
     }
 
     var size: CGSize = .zero
-    var target: CGFloat = 0.5
     private(set) var px: CGFloat = 0.5
     private(set) var bars: [Bar] = []
     private(set) var trail: [CGFloat] = []
     var running = false
     var holding = false
     var paused = false
-    var onSteer: ((CGFloat) -> Void)?
-    var steerBaseline: CGFloat = 0.5
-    var rawSteer: CGFloat = 0.5
     /// Slider travel is bounded, so the middle part of it reaches the whole field.
     static var steerGain: CGFloat = 4.0
     /// 0.005 (earlier step) divided by 0.001 (current step).
     static let stepScale: CGFloat = 5
+    /// Demo flag: steers itself through the gaps.
     var bot = false
-    var level = 1
-    static let levelNames = ["Calm", "Normal", "Fast"]
-    private var levelScale: CGFloat { [0.8, 1.0, 1.25][min(max(level, 0), 2)] }
     private(set) var score: Double = 0
     /// Floors passed this round, and the lightning earned for them. Dashed floors count the same.
     private(set) var floors = 0
     private(set) var lightning = 0
-    var onFloor: (() -> Void)?
     /// Prototype curve: floors 1-5 give 1 lightning each, 6-10 give 2, 11-15 give 3, and so on.
     static func reward(forFloor n: Int) -> Int { 1 + max(0, n - 1) / 5 }
     private(set) var dashLeft: Double = 0
     private(set) var cooldown: Double = 0
     private(set) var worldSpeed: CGFloat = 0
+
     var onEnd: (() -> Void)?
     var onDash: (() -> Void)?
-    var pressHandler: (() -> Void)?
+    var onFloor: (() -> Void)?
     var onShopPick: ((Int) -> Void)?
+    var pressHandler: (() -> Void)?
     var pressBegan: (() -> Void)?
     var pressCancel: (() -> Void)?
 
@@ -50,14 +46,41 @@ final class Engine {
     let radius: CGFloat = 13
     private let dashDuration = 0.45
     private let dashCooldown = 2.0
-    private var last: Date?
+    private let spacing: CGFloat = 250
+    private var last: TimeInterval?
     private var travel: CGFloat = 0
     private var lastGapX: CGFloat = 0
     private var attractPhase: Double = 0
 
+    private let lock = NSLock()
+    private var _target: CGFloat = 0.5
+    private var _rawSteer: CGFloat = 0.5
+
     var playerY: CGFloat { size.height * 0.8 }
     var dashing: Bool { dashLeft > 0 }
     var charge: Double { cooldown <= 0 ? 1 : max(0, 1 - cooldown / dashCooldown) }
+
+    /// Where the ball wants to be, 0...1 across the field.
+    var target: CGFloat {
+        get { lock.lock(); defer { lock.unlock() }; return _target }
+        set { lock.lock(); _target = newValue; lock.unlock() }
+    }
+
+    /// Last value reported by the Camera Control slider.
+    var rawSteer: CGFloat {
+        get { lock.lock(); defer { lock.unlock() }; return _rawSteer }
+        set { lock.lock(); _rawSteer = newValue; lock.unlock() }
+    }
+
+    /// Relative mapping: the ball moves by the slider delta times the gain. A swipe delivers roughly
+    /// a fixed number of steps, so the delta shrinks with the step size; stepScale keeps the feel.
+    func steer(slider value: CGFloat) {
+        lock.lock()
+        let delta = value - _rawSteer
+        _rawSteer = value
+        if !paused { _target = min(max(_target + delta * Engine.steerGain * Engine.stepScale, 0), 1) }
+        lock.unlock()
+    }
 
     func reset() {
         bars = []
@@ -80,8 +103,6 @@ final class Engine {
         onDash?()
     }
 
-    private func spacing() -> CGFloat { 250 }
-
     private func spawn() {
         let w = size.width
         let gapW = max(118, 230 - CGFloat(score) * 0.35)
@@ -95,13 +116,13 @@ final class Engine {
         bars.append(Bar(y: -thick, gapX: gx, gapW: gapW))
     }
 
-    func step(_ now: Date, _ newSize: CGSize) {
-        size = newSize
+    /// `now` is a monotonic timestamp in seconds.
+    func step(_ now: TimeInterval) {
         guard size.width > 0, size.height > 0 else { return }
         if paused { last = now; return }
-        let dt = min(max(now.timeIntervalSince(last ?? now), 0), 1.0 / 20.0)
+        let dt = min(max(now - (last ?? now), 0), 1.0 / 20.0)
         last = now
-        let base: CGFloat = running ? (250 + CGFloat(min(score * 0.25, 260))) * levelScale : 90
+        let base: CGFloat = running ? 250 + CGFloat(min(score * 0.25, 260)) : 90
         let v = base * (dashing ? 2.6 : 1)
         worldSpeed = v
         let d = CGFloat(dt)
@@ -121,7 +142,7 @@ final class Engine {
         // World
         for i in bars.indices { bars[i].y += v * d }
         travel += v * d
-        if travel >= spacing() {
+        if travel >= spacing {
             travel = 0
             spawn()
         }

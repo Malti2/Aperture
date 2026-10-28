@@ -1,4 +1,4 @@
-name: CameraControlTest
+name: Aperture
 options:
   bundleIdPrefix: de.malte
   deploymentTarget:
@@ -8,7 +8,7 @@ settings:
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1"
 targets:
-  CameraControlTest:
+  Aperture:
     type: application
     platform: iOS
     sources: [Sources]
@@ -23,4 +23,4 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UIUserInterfaceStyle: Dark
         MARKETING_VERSION: "27.0.0"
-        CURRENT_PROJECT_VERSION: "24"
+        CURRENT_PROJECT_VERSION: "27"
