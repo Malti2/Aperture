@@ -19,7 +19,6 @@ struct ContentView: View {
     @State private var pausedAt = Date.distantPast
     @State private var statsAt = Date.distantPast
     @State private var showSettings = false
-    @State private var settingsRow = 0
     @State private var menuSelection = 0
     @State private var menuHintVisible = false
     @State private var menuHintToken = 0
@@ -76,7 +75,7 @@ struct ContentView: View {
         .onAppear(perform: setup)
         .onDisappear { loop.stop() }
         .sheet(isPresented: $showSettings) {
-            SettingsSheet(profile: profile, row: $settingsRow) { showSettings = false }
+            SettingsSheet(profile: profile) { showSettings = false }
                 .background(CaptureEventView(engine: engine).allowsHitTesting(false))
         }
         .onChange(of: profile.steerGain) { _, v in
@@ -86,7 +85,6 @@ struct ContentView: View {
         .onChange(of: profile.hapticLevel) { _, _ in syncCameraSettings() }
         .onChange(of: profile.soundOn) { _, _ in syncCameraSettings() }
         .onChange(of: profile.difficulty) { _, _ in syncCameraSettings() }
-        .onChange(of: settingsRow) { _, row in cam.syncSettingsRow(row) }
         .onChange(of: phase) { _, new in
             updateIdleTimer()
             updateCameraControls()
@@ -102,8 +100,6 @@ struct ContentView: View {
         .onChange(of: showSettings) { _, open in
             updateIdleTimer()
             if open {
-                settingsRow = 0
-                cam.syncSettingsRow(0)
                 hideMenuHint()
             } else {
                 showMenuHint()
@@ -212,13 +208,10 @@ struct ContentView: View {
             guard showSettings else { return }
             profile.steerGain = min(max((value * 10).rounded() / 10, 1), 7)
         }
-        cam.onHapticLevel = { value in
+        cam.onFeedback = { level, sound in
             guard showSettings else { return }
-            profile.hapticLevel = min(max(value, 0), 2)
-        }
-        cam.onSound = { value in
-            guard showSettings else { return }
-            profile.soundOn = value
+            profile.hapticLevel = min(max(level, 0), 2)
+            profile.soundOn = sound
         }
         cam.onDifficulty = { value in
             guard showSettings else { return }

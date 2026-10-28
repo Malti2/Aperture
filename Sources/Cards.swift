@@ -136,15 +136,9 @@ struct PauseOverlay: View {
     }
 }
 
-/// The highlighted row is the active one: tap a row to pick it, Camera Control then changes its value.
 struct SettingsSheet: View {
     @ObservedObject var profile: Profile
-    @Binding var row: Int
     let onBack: () -> Void
-
-    private func rowBackground(_ i: Int) -> some View {
-        (row == i ? Color.white.opacity(0.14) : Color.clear)
-    }
 
     var body: some View {
         NavigationStack {
@@ -159,8 +153,6 @@ struct SettingsSheet: View {
                         Text("Faster")
                     }
                 }
-                .listRowBackground(rowBackground(0))
-                .onTapGesture { row = 0 }
                 VStack(alignment: .leading) {
                     Text("Haptics")
                     Picker("Haptics", selection: $profile.hapticLevel) {
@@ -168,11 +160,7 @@ struct SettingsSheet: View {
                     }
                     .pickerStyle(.segmented)
                 }
-                .listRowBackground(rowBackground(1))
-                .onTapGesture { row = 1 }
                 Toggle("Sound", isOn: $profile.soundOn)
-                    .listRowBackground(rowBackground(2))
-                    .onTapGesture { row = 2 }
                 VStack(alignment: .leading) {
                     Text("Difficulty")
                     Picker("Difficulty", selection: $profile.difficulty) {
@@ -180,13 +168,7 @@ struct SettingsSheet: View {
                     }
                     .pickerStyle(.segmented)
                 }
-                .listRowBackground(rowBackground(3))
-                .onTapGesture { row = 3 }
             }
-            .onChange(of: profile.steerGain) { _, _ in row = 0 }
-            .onChange(of: profile.hapticLevel) { _, _ in row = 1 }
-            .onChange(of: profile.soundOn) { _, _ in row = 2 }
-            .onChange(of: profile.difficulty) { _, _ in row = 3 }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

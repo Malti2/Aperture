@@ -23,7 +23,7 @@ A small arcade game for iPhone that you steer with Camera Control. Swipe the con
 | Menu | Play, Daily, Shop, Stats, Settings | Open the selection |
 | Playing | Steer | Dash |
 | Shop | Item (tabs by touch) | Equip, or hold to buy |
-| Settings | Value of the selected row (rows by touch) | - |
+| Settings | Value of the active control (switch controls natively with Camera Control) | - |
 | Stats, Paused, Crashed | - | Back, continue, retry |
 
 ## Privacy
