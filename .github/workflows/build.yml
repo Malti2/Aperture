@@ -2,7 +2,7 @@ name: Build
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, 'claude/**']
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
@@ -27,7 +27,7 @@ jobs:
         with:
           name: Aperture-ipa
           path: Aperture.ipa
-          retention-days: 1
+          retention-days: 7
   screenshot:
     runs-on: macos-26
     steps:
@@ -81,6 +81,8 @@ jobs:
             shop-motion.mp4
           retention-days: 1
   release:
+    # Only main publishes a draft release; other branches just keep the artifacts.
+    if: github.ref == 'refs/heads/main'
     needs: [ipa, screenshot]
     runs-on: ubuntu-latest
     permissions:
