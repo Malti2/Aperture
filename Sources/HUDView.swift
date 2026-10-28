@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Lightning balance on top, pause and dash while playing.
+/// Lightning balance on top, status chips, pause and dash while playing.
 struct HUDView: View {
     let engine: Engine
     let bank: Int
@@ -10,19 +10,26 @@ struct HUDView: View {
     var body: some View {
         VStack(spacing: 0) {
             GlassEffectContainer(spacing: 12) {
-                HStack(spacing: 12) {
-                    Label("\(bank)", systemImage: "bolt.fill")
-                        .font(.title3.weight(.semibold).monospacedDigit())
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 10)
-                        .glassEffect(.regular, in: .capsule)
-                    Spacer()
-                    if playing {
-                        Button(action: onPause) {
-                            Image(systemName: "pause.fill").frame(width: 38, height: 38)
+                VStack(spacing: 10) {
+                    HStack(spacing: 12) {
+                        Label("\(bank)", systemImage: "bolt.fill")
+                            .font(.title3.weight(.semibold).monospacedDigit())
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 10)
+                            .glassEffect(.regular, in: .capsule)
+                        Spacer()
+                        if playing {
+                            Button(action: onPause) {
+                                Image(systemName: "pause.fill").frame(width: 38, height: 38)
+                            }
+                            .buttonStyle(.glass)
+                            .buttonBorderShape(.circle)
                         }
-                        .buttonStyle(.glass)
-                        .buttonBorderShape(.circle)
+                    }
+                    if playing {
+                        TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+                            statusRow
+                        }
                     }
                 }
             }
@@ -50,5 +57,30 @@ struct HUDView: View {
                 }
             }
         }
+    }
+
+    private func chip(_ symbol: String, _ text: String?, _ color: Color) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: symbol)
+            if let text { Text(text).monospacedDigit() }
+        }
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(color)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .glassEffect(.regular, in: .capsule)
+    }
+
+    private var statusRow: some View {
+        HStack(spacing: 8) {
+            if engine.multiplier > 1 {
+                chip("flame.fill", "x\(engine.multiplier)", Color(red: 1.0, green: 0.68, blue: 0.30))
+            }
+            if engine.shield { chip(PowerUp.shield.symbol, nil, PowerUp.shield.color) }
+            if engine.magnetLeft > 0 { chip(PowerUp.magnet.symbol, String(format: "%.0f", ceil(engine.magnetLeft)), PowerUp.magnet.color) }
+            if engine.slowLeft > 0 { chip(PowerUp.slow.symbol, String(format: "%.0f", ceil(engine.slowLeft)), PowerUp.slow.color) }
+            Spacer()
+        }
+        .frame(height: 32)
     }
 }

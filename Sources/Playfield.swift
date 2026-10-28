@@ -4,7 +4,9 @@ import SwiftUI
 struct PlayfieldView: View {
     let engine: Engine
     let phase: Phase
-    let equipped: Int
+    let ball: ShopItem
+    let trailSkin: ShopItem
+    let theme: Theme
     /// Horizontal touch position as 0...1.
     let onDrag: (CGFloat) -> Void
 
@@ -32,12 +34,12 @@ struct PlayfieldView: View {
         context.fill(
             Path(full),
             with: .linearGradient(
-                Gradient(colors: [Color(red: 0.03, green: 0.03, blue: 0.07), Color(red: 0.07, green: 0.08, blue: 0.16)]),
+                Gradient(colors: [theme.top, theme.bottom]),
                 startPoint: CGPoint(x: size.width / 2, y: 0),
                 endPoint: CGPoint(x: size.width / 2, y: size.height)
             )
         )
-        let accent = Color(red: 0.42, green: 0.80, blue: 1.0)
+        let accent = theme.accent
         let dimmed = phase != .playing
 
         for bar in engine.bars {
@@ -56,6 +58,19 @@ struct PlayfieldView: View {
             }
         }
 
+        for p in engine.pickups {
+            let pr: CGFloat = 15
+            let rect = CGRect(x: p.x - pr, y: p.y - pr, width: pr * 2, height: pr * 2)
+            context.fill(Path(ellipseIn: rect.insetBy(dx: -8, dy: -8)),
+                         with: .radialGradient(Gradient(colors: [p.kind.color.opacity(0.4), p.kind.color.opacity(0)]),
+                                               center: CGPoint(x: p.x, y: p.y), startRadius: 0, endRadius: pr + 8))
+            context.fill(Path(ellipseIn: rect), with: .color(p.kind.color.opacity(0.25)))
+            context.stroke(Path(ellipseIn: rect), with: .color(p.kind.color), lineWidth: 1.5)
+            var icon = context.resolve(Image(systemName: p.kind.symbol))
+            icon.shading = .color(p.kind.color)
+            context.draw(icon, at: CGPoint(x: p.x, y: p.y))
+        }
+
         // The Shop shows only the ball picker; the idle ball swinging behind it stays hidden.
         if phase == .shop { return }
         let y = engine.playerY
@@ -65,7 +80,9 @@ struct PlayfieldView: View {
             let k = 1 - Double(i) / 18
             let rr = r * CGFloat(0.35 + 0.6 * k)
             let rect = CGRect(x: x - rr, y: y + CGFloat(i) * step - rr, width: rr * 2, height: rr * 2)
-            context.fill(Path(ellipseIn: rect), with: .color((engine.dashing ? accent : .white).opacity(0.16 * k)))
+            let tint: Color = engine.dashing ? accent
+                : trailSkin.rainbow ? Color(hue: Double(i) / 18 * 0.8, saturation: 0.6, brightness: 1) : trailSkin.color
+            context.fill(Path(ellipseIn: rect), with: .color(tint.opacity((trailSkin.cost == 0 ? 0.16 : 0.3) * k)))
         }
         let x = engine.px * size.width
         let glowR = r * (engine.dashing ? 4.2 : 2.6)
@@ -76,7 +93,11 @@ struct PlayfieldView: View {
                 center: CGPoint(x: x, y: y), startRadius: 0, endRadius: glowR
             )
         )
-        let skin = ballSkins[min(max(equipped, 0), ballSkins.count - 1)]
-        context.fill(Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)), with: .color(skin.color))
+        context.fill(Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)), with: .color(ball.color))
+        if engine.shield {
+            let sr = r + 9
+            context.stroke(Path(ellipseIn: CGRect(x: x - sr, y: y - sr, width: sr * 2, height: sr * 2)),
+                           with: .color(PowerUp.shield.color.opacity(0.9)), lineWidth: 2.5)
+        }
     }
 }

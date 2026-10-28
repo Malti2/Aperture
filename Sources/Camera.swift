@@ -21,22 +21,41 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
     private static let stableSeconds = 10.0
     @Published var cameraStopped = false
     private var steerSlider: AVCaptureSlider?
-    private var shopPicker: AVCaptureIndexPicker?
     private var menuPicker: AVCaptureIndexPicker?
-    private var settingsSpeed: AVCaptureSlider?
+    private var categoryPicker: AVCaptureIndexPicker?
+    private var itemPickers: [AVCaptureIndexPicker] = []
+    private var rowPicker: AVCaptureIndexPicker?
+    private var speedSlider: AVCaptureSlider?
     private var hapticsPicker: AVCaptureIndexPicker?
+    private var soundPicker: AVCaptureIndexPicker?
+    private var difficultyPicker: AVCaptureIndexPicker?
+
+    // Screen state mirrored onto the controls. Camera queue only.
     private var menuIndex = 0
+    private var shopCategory = 0
+    private var shopIndexes = [0, 0, 0]
+    private var settingsRow = 0
     private var sensitivity: Float = 4
-    private var hapticsEnabled = true
+    private var hapticLevel = 2
+    private var soundOn = true
+    private var difficulty = 1
+
     var onMenuPick: ((Int) -> Void)?
+    var onShopCategory: ((Int) -> Void)?
+    var onShopPick: ((Int) -> Void)?
+    var onSettingsRow: ((Int) -> Void)?
     var onSensitivity: ((Double) -> Void)?
-    var onHaptics: ((Bool) -> Void)?
-    private var shopIndex = 0
+    var onHapticLevel: ((Int) -> Void)?
+    var onSound: ((Bool) -> Void)?
+    var onDifficulty: ((Int) -> Void)?
     private weak var gameEngine: Engine?
 
-    /// Each screen exposes only its own controls. Menu actions share one named picker.
+    /// Each screen exposes only its own controls (the system allows only a few at a time).
     enum ControlMode { case steer, none, shop, menu, settings }
     private var mode: ControlMode = .menu
+
+    static let menuTitles = ["Play", "Daily", "Shop", "Stats", "Settings"]
+    static let settingsRows = ["Steering", "Haptics", "Sound", "Difficulty", "Close"]
 
     override init() {
         super.init()
@@ -110,21 +129,26 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
     }
 
     /// Shows only the entry that fits the current screen. Controls may be added and removed while the session runs.
-    func setMode(_ newMode: ControlMode, shopIndex: Int = 0) {
+    func setMode(_ newMode: ControlMode) {
         queue.async { [weak self] in
             guard let self = self else { return }
             self.mode = newMode
-            self.shopIndex = shopIndex
             self.applyMode()
         }
     }
 
-    /// Keeps the Camera Control ball picker in line with a touch selection.
-    func syncShop(index: Int) {
+    /// Keeps the Camera Control pickers in line with a touch selection in the Shop.
+    func syncShop(category: Int, index: Int) {
         queue.async { [weak self] in
-            guard let self = self else { return }
-            self.shopIndex = index
-            if let p = self.shopPicker, p.selectedIndex != index { p.selectedIndex = index }
+            guard let self = self, (0..<3).contains(category) else { return }
+            let changed = self.shopCategory != category
+            self.shopCategory = category
+            self.shopIndexes[category] = index
+            if self.itemPickers.indices.contains(category), self.itemPickers[category].selectedIndex != index {
+                self.itemPickers[category].selectedIndex = index
+            }
+            if let c = self.categoryPicker, c.selectedIndex != category { c.selectedIndex = category }
+            if changed { self.applyMode() }
         }
     }
 
@@ -135,30 +159,51 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
         }
     }
 
+    func syncSettingsRow(_ row: Int) {
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            self.settingsRow = row
+            if let p = self.rowPicker, p.selectedIndex != row { p.selectedIndex = row }
+            self.applyMode()
+        }
+    }
+
     /// Touch and hardware controls share the same saved Settings values.
-    func syncSettings(sensitivity: Double, haptics: Bool) {
+    func syncSettings(sensitivity: Double, hapticLevel: Int, sound: Bool, difficulty: Int) {
         queue.async { [weak self] in
             guard let self = self else { return }
             self.sensitivity = Float(sensitivity)
-            self.hapticsEnabled = haptics
-            self.settingsSpeed?.value = Float(sensitivity)
-            self.hapticsPicker?.selectedIndex = haptics ? 1 : 0
+            self.hapticLevel = hapticLevel
+            self.soundOn = sound
+            self.difficulty = difficulty
+            self.speedSlider?.value = Float(sensitivity)
+            self.hapticsPicker?.selectedIndex = hapticLevel
+            self.soundPicker?.selectedIndex = sound ? 1 : 0
+            self.difficultyPicker?.selectedIndex = difficulty
         }
     }
 
     /// Runs on the camera queue. Never changes the live steering value while playing.
     private func applyMode() {
-        guard session.supportsControls, let slider = steerSlider,
-              let ball = shopPicker, let menu = menuPicker,
-              let sensitivity = settingsSpeed, let haptics = hapticsPicker else { return }
-        let all: [AVCaptureControl] = [slider, ball, menu, sensitivity, haptics]
+        guard session.supportsControls, let slider = steerSlider, let menu = menuPicker,
+              let category = categoryPicker, itemPickers.count == 3, let row = rowPicker,
+              let speed = speedSlider, let haptics = hapticsPicker, let sound = soundPicker,
+              let difficultyPicker = difficultyPicker else { return }
+        let all: [AVCaptureControl] = [slider, menu, category, row, speed, haptics, sound, difficultyPicker] + itemPickers
         let wanted: [AVCaptureControl]
         switch mode {
         case .steer: wanted = [slider]
-        case .none: wanted = [] // Paused or over: no controls.
-        case .shop: wanted = [ball]
+        case .none: wanted = []
         case .menu: wanted = [menu]
-        case .settings: wanted = [sensitivity, haptics]
+        case .shop: wanted = [category, itemPickers[min(max(shopCategory, 0), 2)]]
+        case .settings:
+            switch settingsRow {
+            case 0: wanted = [row, speed]
+            case 1: wanted = [row, haptics]
+            case 2: wanted = [row, sound]
+            case 3: wanted = [row, difficultyPicker]
+            default: wanted = [row]
+            }
         }
         for c in all where !wanted.contains(where: { $0 === c }) && session.controls.contains(where: { $0 === c }) {
             session.removeControl(c)
@@ -167,14 +212,23 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
             if control === slider {
                 gameEngine?.rawSteer = 0.5
                 slider.value = 0.5
-            } else if control === ball {
-                ball.selectedIndex = min(max(shopIndex, 0), ballSkins.count - 1)
             } else if control === menu {
-                menu.selectedIndex = min(max(menuIndex, 0), 2)
-            } else if control === sensitivity {
-                sensitivity.value = self.sensitivity
+                menu.selectedIndex = min(max(menuIndex, 0), Self.menuTitles.count - 1)
+            } else if control === category {
+                category.selectedIndex = min(max(shopCategory, 0), 2)
+            } else if let i = itemPickers.firstIndex(where: { $0 === control }) {
+                let count = ShopCategory(rawValue: i)?.items.count ?? 1
+                itemPickers[i].selectedIndex = min(max(shopIndexes[i], 0), count - 1)
+            } else if control === row {
+                row.selectedIndex = min(max(settingsRow, 0), Self.settingsRows.count - 1)
+            } else if control === speed {
+                speed.value = sensitivity
             } else if control === haptics {
-                haptics.selectedIndex = hapticsEnabled ? 1 : 0
+                haptics.selectedIndex = hapticLevel
+            } else if control === sound {
+                sound.selectedIndex = soundOn ? 1 : 0
+            } else if control === difficultyPicker {
+                difficultyPicker.selectedIndex = difficulty
             }
             if session.canAddControl(control) { session.addControl(control) }
         }
@@ -232,37 +286,74 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
                 guard self?.mode == .steer else { return }
                 engine.steer(slider: CGFloat(value))
             }
-            let ball = AVCaptureIndexPicker("Ball", symbolName: "circle.fill", localizedIndexTitles: ballSkins.map { $0.name })
-            ball.selectedIndex = 0
-            ball.setActionQueue(queue) { [weak self] index in
-                guard self?.mode == .shop else { return }
-                // Selection only. Buying always needs the hold on screen.
-                DispatchQueue.main.async { engine.onShopPick?(index) }
-            }
-            shopPicker = ball
-            let menu = AVCaptureIndexPicker("Main Menu", symbolName: "list.bullet", localizedIndexTitles: ["Play", "Shop", "Settings"])
+
+            let menu = AVCaptureIndexPicker("Main Menu", symbolName: "list.bullet", localizedIndexTitles: Self.menuTitles)
             menu.setActionQueue(queue) { [weak self] index in
                 guard let self = self, self.mode == .menu else { return }
                 self.menuIndex = index
                 DispatchQueue.main.async { self.onMenuPick?(index) }
             }
             menuPicker = menu
-            let sensitivity = AVCaptureSlider("Speed", symbolName: "arrow.left.and.right", in: 1...7, step: 0.1)
-            sensitivity.value = self.sensitivity
-            sensitivity.setActionQueue(queue) { [weak self] value in
+
+            let category = AVCaptureIndexPicker("Shop", symbolName: "bag.fill", localizedIndexTitles: ShopCategory.allCases.map { $0.title })
+            category.setActionQueue(queue) { [weak self] index in
+                guard let self = self, self.mode == .shop else { return }
+                self.shopCategory = index
+                self.applyMode()
+                DispatchQueue.main.async { self.onShopCategory?(index) }
+            }
+            categoryPicker = category
+            itemPickers = ShopCategory.allCases.map { cat in
+                let picker = AVCaptureIndexPicker(cat.title, symbolName: cat.symbol, localizedIndexTitles: cat.items.map { $0.name })
+                picker.setActionQueue(queue) { [weak self] index in
+                    guard let self = self, self.mode == .shop, self.shopCategory == cat.rawValue else { return }
+                    // Selection only. Buying always needs the hold on screen.
+                    self.shopIndexes[cat.rawValue] = index
+                    DispatchQueue.main.async { self.onShopPick?(index) }
+                }
+                return picker
+            }
+
+            let row = AVCaptureIndexPicker("Settings", symbolName: "gearshape.fill", localizedIndexTitles: Self.settingsRows)
+            row.setActionQueue(queue) { [weak self] index in
+                guard let self = self, self.mode == .settings else { return }
+                self.settingsRow = index
+                self.applyMode()
+                DispatchQueue.main.async { self.onSettingsRow?(index) }
+            }
+            rowPicker = row
+            let speed = AVCaptureSlider("Speed", symbolName: "arrow.left.and.right", in: 1...7, step: 0.1)
+            speed.value = sensitivity
+            speed.setActionQueue(queue) { [weak self] value in
                 guard let self = self, self.mode == .settings else { return }
                 self.sensitivity = value
                 DispatchQueue.main.async { self.onSensitivity?(Double(value)) }
             }
-            settingsSpeed = sensitivity
-            let haptics = AVCaptureIndexPicker("Haptics", symbolName: "waveform", localizedIndexTitles: ["Off", "On"])
-            haptics.selectedIndex = hapticsEnabled ? 1 : 0
+            speedSlider = speed
+            let haptics = AVCaptureIndexPicker("Haptics", symbolName: "waveform", localizedIndexTitles: Profile.hapticNames)
+            haptics.selectedIndex = hapticLevel
             haptics.setActionQueue(queue) { [weak self] index in
                 guard let self = self, self.mode == .settings else { return }
-                self.hapticsEnabled = index == 1
-                DispatchQueue.main.async { self.onHaptics?(index == 1) }
+                self.hapticLevel = index
+                DispatchQueue.main.async { self.onHapticLevel?(index) }
             }
             hapticsPicker = haptics
+            let sound = AVCaptureIndexPicker("Sound", symbolName: "speaker.wave.2.fill", localizedIndexTitles: ["Off", "On"])
+            sound.selectedIndex = soundOn ? 1 : 0
+            sound.setActionQueue(queue) { [weak self] index in
+                guard let self = self, self.mode == .settings else { return }
+                self.soundOn = index == 1
+                DispatchQueue.main.async { self.onSound?(index == 1) }
+            }
+            soundPicker = sound
+            let diff = AVCaptureIndexPicker("Difficulty", symbolName: "speedometer", localizedIndexTitles: Profile.levelNames)
+            diff.selectedIndex = difficulty
+            diff.setActionQueue(queue) { [weak self] index in
+                guard let self = self, self.mode == .settings else { return }
+                self.difficulty = index
+                DispatchQueue.main.async { self.onDifficulty?(index) }
+            }
+            difficultyPicker = diff
             gameEngine = engine
             applyMode()
         }

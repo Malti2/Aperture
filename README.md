@@ -6,10 +6,25 @@ A small arcade game for iPhone that you steer with Camera Control. Swipe the con
 
 ## Highlights
 
-- Steer with swipes on Camera Control
-- Adjustable steering speed and haptics
-- Pause with a swipe-to-continue slider
+- Steer with swipes on Camera Control, click to dash
+- Power-ups: shield, magnet and slow-mo
+- Combo multiplier for clean passes, swinging walls later in a round
+- Three difficulties (Calm, Normal, Fast) and a daily challenge with the same course for everyone
+- Shop with ball skins, trail colors and themes, paid with lightning from your rounds
+- Stats and achievements with lightning rewards
+- Sounds and haptics with adjustable strength
+- Everything works from Camera Control: the menu, shop categories and items, every setting, and pause/continue and retry with a click
 - Built with SwiftUI and Liquid Glass, in dark mode
+
+## Controls
+
+| Screen | Swipe | Click |
+| --- | --- | --- |
+| Menu | Play, Daily, Shop, Stats, Settings | Open the selection |
+| Playing | Steer | Dash |
+| Shop | Category, then item | Equip, or hold to buy |
+| Settings | Row, then its value | Close (on the last row) |
+| Stats, Paused, Crashed | - | Back, continue, retry |
 
 ## Privacy
 
