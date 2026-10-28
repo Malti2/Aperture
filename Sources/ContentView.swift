@@ -207,12 +207,7 @@ struct ContentView: View {
             guard phase == .menu, !showSettings, (0..<CameraService.menuTitles.count).contains(index) else { return }
             menuSelection = index
         }
-        cam.onShopCategory = { index in shopCommands.category?(index) }
         cam.onShopPick = { index in shopCommands.select?(index) }
-        cam.onSettingsRow = { row in
-            guard showSettings else { return }
-            settingsRow = row
-        }
         cam.onSensitivity = { value in
             guard showSettings else { return }
             profile.steerGain = min(max((value * 10).rounded() / 10, 1), 7)
@@ -251,11 +246,7 @@ struct ContentView: View {
 
     private func handlePress() {
         guard scenePhase != .background else { return }
-        if showSettings {
-            // The last settings row is "Close".
-            if settingsRow == CameraService.settingsRows.count - 1 { showSettings = false }
-            return
-        }
+        if showSettings { return }
         switch phase {
         case .playing: engine.dash()
         case .menu:

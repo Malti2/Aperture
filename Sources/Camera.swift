@@ -22,9 +22,7 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
     @Published var cameraStopped = false
     private var steerSlider: AVCaptureSlider?
     private var menuPicker: AVCaptureIndexPicker?
-    private var categoryPicker: AVCaptureIndexPicker?
     private var itemPickers: [AVCaptureIndexPicker] = []
-    private var rowPicker: AVCaptureIndexPicker?
     private var speedSlider: AVCaptureSlider?
     private var hapticsPicker: AVCaptureIndexPicker?
     private var soundPicker: AVCaptureIndexPicker?
@@ -41,9 +39,7 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
     private var difficulty = 1
 
     var onMenuPick: ((Int) -> Void)?
-    var onShopCategory: ((Int) -> Void)?
     var onShopPick: ((Int) -> Void)?
-    var onSettingsRow: ((Int) -> Void)?
     var onSensitivity: ((Double) -> Void)?
     var onHapticLevel: ((Int) -> Void)?
     var onSound: ((Bool) -> Void)?
@@ -51,11 +47,11 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
     private weak var gameEngine: Engine?
 
     /// Each screen exposes only its own controls (the system allows only a few at a time).
+    /// Tabs and settings rows are chosen by touch; Camera Control only changes the active one.
     enum ControlMode { case steer, none, shop, menu, settings }
     private var mode: ControlMode = .menu
 
     static let menuTitles = ["Play", "Daily", "Shop", "Stats", "Settings"]
-    static let settingsRows = ["Steering", "Haptics", "Sound", "Difficulty", "Close"]
 
     override init() {
         super.init()
@@ -147,7 +143,6 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
             if self.itemPickers.indices.contains(category), self.itemPickers[category].selectedIndex != index {
                 self.itemPickers[category].selectedIndex = index
             }
-            if let c = self.categoryPicker, c.selectedIndex != category { c.selectedIndex = category }
             if changed { self.applyMode() }
         }
     }
@@ -159,11 +154,11 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
         }
     }
 
+    /// The settings row picked by touch decides which value Camera Control adjusts.
     func syncSettingsRow(_ row: Int) {
         queue.async { [weak self] in
-            guard let self = self else { return }
+            guard let self = self, self.settingsRow != row else { return }
             self.settingsRow = row
-            if let p = self.rowPicker, p.selectedIndex != row { p.selectedIndex = row }
             self.applyMode()
         }
     }
@@ -186,23 +181,22 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
     /// Runs on the camera queue. Never changes the live steering value while playing.
     private func applyMode() {
         guard session.supportsControls, let slider = steerSlider, let menu = menuPicker,
-              let category = categoryPicker, itemPickers.count == 3, let row = rowPicker,
+              itemPickers.count == 3,
               let speed = speedSlider, let haptics = hapticsPicker, let sound = soundPicker,
               let difficultyPicker = difficultyPicker else { return }
-        let all: [AVCaptureControl] = [slider, menu, category, row, speed, haptics, sound, difficultyPicker] + itemPickers
+        let all: [AVCaptureControl] = [slider, menu, speed, haptics, sound, difficultyPicker] + itemPickers
         let wanted: [AVCaptureControl]
         switch mode {
         case .steer: wanted = [slider]
         case .none: wanted = []
         case .menu: wanted = [menu]
-        case .shop: wanted = [category, itemPickers[min(max(shopCategory, 0), 2)]]
+        case .shop: wanted = [itemPickers[min(max(shopCategory, 0), 2)]]
         case .settings:
             switch settingsRow {
-            case 0: wanted = [row, speed]
-            case 1: wanted = [row, haptics]
-            case 2: wanted = [row, sound]
-            case 3: wanted = [row, difficultyPicker]
-            default: wanted = [row]
+            case 0: wanted = [speed]
+            case 1: wanted = [haptics]
+            case 2: wanted = [sound]
+            default: wanted = [difficultyPicker]
             }
         }
         for c in all where !wanted.contains(where: { $0 === c }) && session.controls.contains(where: { $0 === c }) {
@@ -214,13 +208,9 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
                 slider.value = 0.5
             } else if control === menu {
                 menu.selectedIndex = min(max(menuIndex, 0), Self.menuTitles.count - 1)
-            } else if control === category {
-                category.selectedIndex = min(max(shopCategory, 0), 2)
             } else if let i = itemPickers.firstIndex(where: { $0 === control }) {
                 let count = ShopCategory(rawValue: i)?.items.count ?? 1
                 itemPickers[i].selectedIndex = min(max(shopIndexes[i], 0), count - 1)
-            } else if control === row {
-                row.selectedIndex = min(max(settingsRow, 0), Self.settingsRows.count - 1)
             } else if control === speed {
                 speed.value = sensitivity
             } else if control === haptics {
@@ -295,14 +285,6 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
             }
             menuPicker = menu
 
-            let category = AVCaptureIndexPicker("Shop", symbolName: "bag.fill", localizedIndexTitles: ShopCategory.allCases.map { $0.title })
-            category.setActionQueue(queue) { [weak self] index in
-                guard let self = self, self.mode == .shop else { return }
-                self.shopCategory = index
-                self.applyMode()
-                DispatchQueue.main.async { self.onShopCategory?(index) }
-            }
-            categoryPicker = category
             itemPickers = ShopCategory.allCases.map { cat in
                 let picker = AVCaptureIndexPicker(cat.title, symbolName: cat.symbol, localizedIndexTitles: cat.items.map { $0.name })
                 picker.setActionQueue(queue) { [weak self] index in
@@ -314,14 +296,6 @@ final class CameraService: NSObject, ObservableObject, AVCaptureSessionControlsD
                 return picker
             }
 
-            let row = AVCaptureIndexPicker("Settings", symbolName: "gearshape.fill", localizedIndexTitles: Self.settingsRows)
-            row.setActionQueue(queue) { [weak self] index in
-                guard let self = self, self.mode == .settings else { return }
-                self.settingsRow = index
-                self.applyMode()
-                DispatchQueue.main.async { self.onSettingsRow?(index) }
-            }
-            rowPicker = row
             let speed = AVCaptureSlider("Speed", symbolName: "arrow.left.and.right", in: 1...7, step: 0.1)
             speed.value = sensitivity
             speed.setActionQueue(queue) { [weak self] value in

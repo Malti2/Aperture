@@ -136,7 +136,7 @@ struct PauseOverlay: View {
     }
 }
 
-/// The highlighted row is the one the Camera Control picker currently points at.
+/// The highlighted row is the active one: tap a row to pick it, Camera Control then changes its value.
 struct SettingsSheet: View {
     @ObservedObject var profile: Profile
     @Binding var row: Int
@@ -182,9 +182,11 @@ struct SettingsSheet: View {
                 }
                 .listRowBackground(rowBackground(3))
                 .onTapGesture { row = 3 }
-                Button("Close", action: onBack)
-                    .listRowBackground(rowBackground(4))
             }
+            .onChange(of: profile.steerGain) { _, _ in row = 0 }
+            .onChange(of: profile.hapticLevel) { _, _ in row = 1 }
+            .onChange(of: profile.soundOn) { _, _ in row = 2 }
+            .onChange(of: profile.difficulty) { _, _ in row = 3 }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

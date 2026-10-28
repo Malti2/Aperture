@@ -2,7 +2,6 @@ import SwiftUI
 
 /// Lets ContentView (Camera Control picks and presses) reach the Shop while it is on screen.
 final class ShopCommands {
-    var category: ((Int) -> Void)?
     var select: ((Int) -> Void)?
     var pressBegan: (() -> Void)?
     var pressEnded: (() -> Void)?
@@ -135,7 +134,6 @@ struct ShopView: View {
     }
 
     private func register() {
-        commands.category = { changeCategory($0) }
         commands.select = { select($0) }
         commands.pressBegan = { beginHold(source: .cameraControl) }
         commands.pressEnded = { pressEnded() }
@@ -277,7 +275,6 @@ struct ShopView: View {
         }
         .onDisappear {
             cancelHold()
-            commands.category = nil
             commands.select = nil
             commands.pressBegan = nil
             commands.pressEnded = nil
