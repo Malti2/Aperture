@@ -208,10 +208,13 @@ struct ContentView: View {
             guard showSettings else { return }
             profile.steerGain = min(max((value * 10).rounded() / 10, 1), 7)
         }
-        cam.onFeedback = { level, sound in
+        cam.onHapticLevel = { value in
             guard showSettings else { return }
-            profile.hapticLevel = min(max(level, 0), 2)
-            profile.soundOn = sound
+            profile.hapticLevel = min(max(value, 0), 2)
+        }
+        cam.onSound = { value in
+            guard showSettings else { return }
+            profile.soundOn = value
         }
         cam.onDifficulty = { value in
             guard showSettings else { return }
