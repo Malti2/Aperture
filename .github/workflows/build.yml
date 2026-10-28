@@ -1,6 +1,11 @@
 name: Build
 on:
   workflow_dispatch:
+    inputs:
+      screenshots:
+        description: Also build the simulator screenshots
+        type: boolean
+        default: true
   push:
     branches: [main, 'claude/**']
 concurrency:
@@ -30,6 +35,12 @@ jobs:
           archive: false
           retention-days: 7
   screenshot:
+    # Slow, so branch pushes skip it unless the commit message has [screenshots].
+    # main always runs it because the release job needs it.
+    if: >-
+      github.ref == 'refs/heads/main' ||
+      (github.event_name == 'workflow_dispatch' && inputs.screenshots) ||
+      contains(github.event.head_commit.message, '[screenshots]')
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
