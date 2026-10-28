@@ -7,7 +7,7 @@ enum PowerUp: CaseIterable {
         switch self {
         case .shield: return "shield.fill"
         case .magnet: return "scope"
-        case .slow: return "tortoise.fill"
+        case .slow: return "hourglass"
         }
     }
 

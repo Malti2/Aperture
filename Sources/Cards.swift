@@ -23,26 +23,28 @@ struct MenuCard: View {
                     HStack(spacing: 10) {
                         Button(action: onSettings) {
                             Image(systemName: "gearshape.fill").font(.title3).frame(width: 44, height: 44)
+                                .accessibilityLabel("Settings")
                         }
                         .buttonStyle(.glass)
                         .buttonBorderShape(.circle)
                         Button(action: onStats) {
                             Image(systemName: "chart.bar.fill").font(.title3).frame(width: 44, height: 44)
+                                .accessibilityLabel("Stats")
                         }
                         .buttonStyle(.glass)
                         .buttonBorderShape(.circle)
                         Button(action: onDaily) {
                             Image(systemName: "calendar").font(.title3).frame(width: 44, height: 44)
+                                .accessibilityLabel("Daily challenge")
                         }
                         .buttonStyle(.glass)
                         .buttonBorderShape(.circle)
                         Button(action: onShop) {
-                            Label("Shop", systemImage: "circle.hexagongrid.fill")
-                                .font(.headline)
-                                .padding(.horizontal, 6)
-                                .frame(height: 44)
+                            Image(systemName: "circle.hexagongrid.fill").font(.title3).frame(width: 44, height: 44)
+                                .accessibilityLabel("Shop")
                         }
                         .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
                     }
                 }
                 Text(cameraStopped ? "Camera stopped" : "Camera on, not recorded")
