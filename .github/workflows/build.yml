@@ -23,10 +23,11 @@ jobs:
           mkdir Payload
           cp -R build/Build/Products/Release-iphoneos/Aperture.app Payload/
           zip -qr Aperture.ipa Payload
-      - uses: actions/upload-artifact@v4
+      # Uploaded as the plain .ipa, not wrapped in a zip. The artifact is named after the file.
+      - uses: actions/upload-artifact@v7
         with:
-          name: Aperture-ipa
           path: Aperture.ipa
+          archive: false
           retention-days: 7
   screenshot:
     runs-on: macos-26
@@ -88,14 +89,15 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: out
       - name: Draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          IPA=out/Aperture-ipa/Aperture.ipa
+          IPA=$(find out -name Aperture.ipa -type f | head -n 1)
+          [ -n "$IPA" ] || { echo "Aperture.ipa not found"; find out; exit 1; }
           VERSION=$(unzip -p "$IPA" 'Payload/*.app/Info.plist' | python3 -c "import plistlib,sys; print(plistlib.loads(sys.stdin.buffer.read())['CFBundleShortVersionString'])")
           TAG="v$VERSION"
           echo "Build version $VERSION, tag $TAG"
